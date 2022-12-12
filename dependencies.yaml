@@ -49,3 +49,8 @@ Josev:
 openV2G:
   git: https://github.com/chargebyte/openv2g.git
   git_tag: 0.9.5-improvements
+
+# mbedtls
+libmbedtls:
+  git: https://github.com/chargebyte/mbedtls.git
+  git_tag: mbedtls-2.26.0-trustedCAKey
