@@ -1,0 +1,102 @@
+active_modules:
+  EvseSlac0:
+    config_implementation:
+      main:
+        device: eth1
+        evse_id: PIONIX_SAYS_HELLO
+        nid: pionix!
+        number_of_sounds: 10
+    connections: {}
+    module: EvseSlac
+  api:
+    connections:
+      evse_manager:
+        - implementation_id: evse
+          module_id: evse_manager
+    module: API
+  auth:
+    config_module:
+      connection_timeout: 10
+      prioritize_authorization_over_stopping_transaction: true
+      selection_algorithm: PlugEvents
+    connections:
+      evse_manager:
+        - implementation_id: evse
+          module_id: evse_manager
+      token_provider:
+        - implementation_id: main
+          module_id: token_provider_1
+      token_validator:
+        - implementation_id: main
+          module_id: token_validator
+    module: Auth
+  chargebyte_tarragon_driver:
+    connections: {}
+    module: ChargebyteTarragonDriver
+  energy_manager:
+    connections:
+      energy_trunk:
+        - implementation_id: energy_grid
+          module_id: grid_connection_point
+    module: EnergyManager
+  evse_manager:
+    config_module:
+      ac_enforce_hlc: false
+      ac_hlc_enabled: false
+      ac_hlc_use_5percent: true
+      ac_nominal_voltage: 230
+      ac_with_soc: false
+      charge_mode: AC
+      connector_id: 1
+      country_code: DE
+      dbg_hlc_auth_after_tstep: false
+      dc_current_regulation_tolerance: 5
+      dc_peak_current_ripple: 5
+      ev_receipt_required: false
+      evse_id: DE*PNX*E123456*1
+      has_ventilation: true
+      max_current: 32
+      payment_enable_contract: false
+      payment_enable_eim: true
+      rcd_enabled: true
+      session_logging: false
+      session_logging_path: /tmp
+      session_logging_xml: false
+      three_phases: true
+    connections:
+      bsp:
+        - implementation_id: board_support
+          module_id: chargebyte_tarragon_driver
+      slac:
+        - implementation_id: main
+          module_id: EvseSlac0
+    module: EvseManager
+  grid_connection_point:
+    config_module:
+      fuse_limit_A: 63
+      phase_count: 3
+    connections:
+      energy_consumer:
+        - implementation_id: energy_grid
+          module_id: evse_manager
+    module: EnergyNode
+  token_provider_1:
+    config_implementation:
+      main:
+        timeout: 10
+        token: DEADBEEF
+        type: dummy
+    connections:
+      evse:
+        - implementation_id: evse
+          module_id: evse_manager
+    module: DummyTokenProvider
+  token_validator:
+    config_implementation:
+      main:
+        sleep: 0.25
+        validation_reason: Token seems valid
+        validation_result: Accepted
+    connections: {}
+    module: DummyTokenValidator
+'x-module-layout': {}

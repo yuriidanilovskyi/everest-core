@@ -4,6 +4,7 @@ generate_config_run_script(CONFIG sil-ocpp)
 generate_config_run_script(CONFIG sil-dc)
 generate_config_run_script(CONFIG sil-two-evse-dc)
 generate_config_run_script(CONFIG hil)
+generate_config_run_script(CONFIG chargebyte-tarragon)
 
 # install configs
 install(
