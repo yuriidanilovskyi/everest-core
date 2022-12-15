@@ -16,6 +16,7 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include "v2g_ctx.h"
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -40,7 +41,7 @@ public:
     const std::unique_ptr<ISO15118_chargerImplBase> p_charger;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
-    // insert your public definitions here
+    ~EvseV2G();
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

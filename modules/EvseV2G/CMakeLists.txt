@@ -11,11 +11,25 @@ ev_setup_cpp_module()
 # insert your custom targets and additional config variables here
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 
-target_sources(${MODULE_NAME}
+# Add pkg-config functionality
+find_package(PkgConfig REQUIRED)
+
+# search for libevent.pc
+pkg_search_module(EVENT REQUIRED libevent)
+
+target_include_directories(${MODULE_NAME} PRIVATE ${EVENT_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR} ${SOME_DEP_DIR}/include)
+target_link_libraries(${MODULE_NAME} PUBLIC ${EVENT_LIBRARIES} -levent -lpthread -levent_pthreads)
+
+target_link_libraries(${MODULE_NAME}
     PRIVATE
-        "charger/ISO15118_chargerImpl.cpp"
+        mbedcrypto
+        mbedtls
+        mbedx509
 )
 
-# ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
-# insert other things like install cmds etc here
-# ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1
+target_sources(${MODULE_NAME}
+    PRIVATE
+        v2g_ctx.c
+        log.cpp
+        charger/ISO15118_chargerImpl.cpp
+)
