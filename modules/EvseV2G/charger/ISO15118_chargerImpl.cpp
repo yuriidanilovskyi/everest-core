@@ -1,12 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Pionix GmbH and Contributors to EVerest
-
+// Copyright (C) 2022 chargebyte GmbH
+// Copyright (C) 2022 Contributors to EVerest
 #include "ISO15118_chargerImpl.hpp"
+#include "log.hpp"
+#include "v2g_ctx.h"
+
 
 namespace module {
 namespace charger {
 
 void ISO15118_chargerImpl::init() {
+    if (!v2g_ctx) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_ctx not created");
+        return;
+    }
+
+    v2g_ctx->ifname = mod->config.device.data();
+    dlog(DLOG_LEVEL_DEBUG, "ifname %s", v2g_ctx->ifname);
+    const char *authMode = mod->config.highlevel_authentication_mode.data();
+    dlog(DLOG_LEVEL_DEBUG, "authMode %s", authMode);
+    if (strstr(authMode, "eim") != NULL) {
+        v2g_ctx->ci_evse.payment_option_list[v2g_ctx->ci_evse.payment_option_list_len] =  iso1paymentOptionType_ExternalPayment;
+        v2g_ctx->ci_evse.payment_option_list_len++;
+    }
+    if (strstr(authMode, "pnc") != NULL) {
+        v2g_ctx->ci_evse.payment_option_list[v2g_ctx->ci_evse.payment_option_list_len] =  iso1paymentOptionType_Contract;
+        v2g_ctx->ci_evse.payment_option_list_len++;
+    }
+    if (strstr(authMode, "pnc_online") != NULL) {
+        v2g_ctx->pncOnlineMode = true;
+    }
+    else {
+        v2g_ctx->pncOnlineMode = false;
+    }
+
+    /* Configure hlc_protocols */
+    if (mod->config.supported_DIN70121 == true) {
+        v2g_ctx->supported_protocols |= (1 << V2G_PROTO_DIN70121);
+    }
+    if (mod->config.supported_ISO15118_2 == true) {
+        v2g_ctx->supported_protocols |= (1 << V2G_PROTO_ISO15118_2013);
+    }
+
+    /* Configure tls_security */
+    const char *tls_security = mod->config.tls_security.data();
+    if (mod->config.tls_security.compare("force") == 0) {
+        v2g_ctx->tls_security = TLS_SECURITY_FORCE;
+        dlog(DLOG_LEVEL_DEBUG, "tls_security force");
+    }
+    else if (mod->config.tls_security.compare("prohibit") == 0) {
+        v2g_ctx->tls_security = TLS_SECURITY_PROHIBIT;
+        dlog(DLOG_LEVEL_DEBUG, "tls_security prohibit");
+    }
+    else if (mod->config.tls_security.compare("allow") == 0) {
+        v2g_ctx->tls_security = TLS_SECURITY_ALLOW;
+        dlog(DLOG_LEVEL_DEBUG, "tls_security allow");
+    }
 }
 
 void ISO15118_chargerImpl::ready() {

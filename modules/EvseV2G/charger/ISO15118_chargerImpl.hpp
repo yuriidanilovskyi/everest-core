@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Pionix GmbH and Contributors to EVerest
+// Copyright (C) 2022 chargebyte GmbH
+// Copyright (C) 2022 Contributors to EVerest
 #ifndef CHARGER_ISO15118_CHARGER_IMPL_HPP
 #define CHARGER_ISO15118_CHARGER_IMPL_HPP
 
@@ -13,7 +14,8 @@
 #include "../EvseV2G.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
-// insert your custom include headers here
+#include "v2g.h"
+extern struct v2g_context *v2g_ctx;
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
