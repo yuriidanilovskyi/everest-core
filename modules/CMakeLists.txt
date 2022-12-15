@@ -1,5 +1,7 @@
 ev_add_cpp_module(API)
 ev_add_cpp_module(Auth)
+ev_add_cpp_module(DummyTokenProvider)
+ev_add_cpp_module(DummyTokenValidator)
 ev_add_cpp_module(EnergyManager)
 ev_add_cpp_module(EnergyNode)
 ev_add_cpp_module(EvseManager)
