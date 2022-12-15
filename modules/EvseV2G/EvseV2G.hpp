@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright Pionix GmbH and Contributors to EVerest
+// Copyright (C) 2022 chargebyte GmbH
+// Copyright (C) 2022 Contributors to EVerest
 #ifndef EVSE_V2G_HPP
 #define EVSE_V2G_HPP
 
@@ -21,7 +22,6 @@ namespace module {
 
 struct Conf {
     std::string device;
-    bool enforce_tls;
     bool supported_DIN70121;
     bool supported_ISO15118_2;
     std::string highlevel_authentication_mode;
