@@ -62,15 +62,69 @@ void ISO15118_chargerImpl::ready() {
 }
 
 void ISO15118_chargerImpl::handle_set_EVSEID(std::string& EVSEID, std::string& EVSEID_DIN){
-    // your code for cmd set_EVSEID goes here
+    uint8_t len = EVSEID.length();
+    if (len < iso1SessionSetupResType_EVSEID_CHARACTERS_SIZE) {
+        memcpy(v2g_ctx->ci_evse.evse_id.bytes, reinterpret_cast<uint8_t*>(EVSEID.data()), len);
+        v2g_ctx->ci_evse.evse_id.bytesLen = len;
+    }
+    else {
+        dlog(DLOG_LEVEL_WARNING, "EVSEID_CHARACTERS_SIZE exceeded (received: %u, max: %u)", len, iso1SessionSetupResType_EVSEID_CHARACTERS_SIZE);
+    }
 };
 
 void ISO15118_chargerImpl::handle_set_PaymentOptions(Array& PaymentOptions){
-    // your code for cmd set_PaymentOptions goes here
-};
+    v2g_ctx->ci_evse.payment_option_list_len = 0;
+
+    for (auto& element : PaymentOptions) {
+        if(element.is_string()) {
+            if (std::string("Contract").compare(element.get<std::string>()) == 0) {
+                v2g_ctx->ci_evse.payment_option_list[v2g_ctx->ci_evse.payment_option_list_len] =  iso1paymentOptionType_Contract;
+                v2g_ctx->ci_evse.payment_option_list_len++;
+            }
+            else if (std::string("ExternalPayment").compare(element.get<std::string>()) == 0) {
+                v2g_ctx->ci_evse.payment_option_list[v2g_ctx->ci_evse.payment_option_list_len] =  iso1paymentOptionType_ExternalPayment;
+                v2g_ctx->ci_evse.payment_option_list_len++;
+            }
+            else if (v2g_ctx->ci_evse.payment_option_list_len == 0) {
+                dlog(DLOG_LEVEL_WARNING, "Unable to configure PaymentOptions %s", element.get<std::string>());
+            }
+        }
+    }
+}
 
 void ISO15118_chargerImpl::handle_set_SupportedEnergyTransferMode(Array& SupportedEnergyTransferMode){
-    // your code for cmd set_SupportedEnergyTransferMode goes here
+    uint16_t& energyArrayLen = (v2g_ctx->ci_evse.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.arrayLen);
+    iso1EnergyTransferModeType* energyArray = v2g_ctx->ci_evse.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array;
+    energyArrayLen = 0;
+
+    uint8_t arrayLen = std::min(iso1SupportedEnergyTransferModeType_EnergyTransferMode_ARRAY_SIZE, 
+                        static_cast<int>(SupportedEnergyTransferMode.size()));
+    
+    for (auto& element : SupportedEnergyTransferMode) {
+        if(element.is_string()) {
+            if (std::string("AC_single_phase_core").compare(element.get<std::string>()) == 0) {
+                energyArray[(energyArrayLen)++] = iso1EnergyTransferModeType_AC_single_phase_core;
+            }
+            else if (std::string("AC_three_phase_core").compare(element.get<std::string>()) == 0) {
+                energyArray[(energyArrayLen)++] = iso1EnergyTransferModeType_AC_three_phase_core;
+            }
+            else if (std::string("DC_core").compare(element.get<std::string>()) == 0) {
+                energyArray[(energyArrayLen)++] = iso1EnergyTransferModeType_DC_core;
+            }
+            else if (std::string("DC_extended").compare(element.get<std::string>()) == 0) {
+                energyArray[(energyArrayLen)++] = iso1EnergyTransferModeType_DC_extended;
+            }
+            else if (std::string("DC_combo_core").compare(element.get<std::string>()) == 0) {
+                energyArray[(energyArrayLen)++] = iso1EnergyTransferModeType_DC_combo_core;
+            }
+            else if (std::string("DC_unique").compare(element.get<std::string>()) == 0) {
+                energyArray[(energyArrayLen)++] = iso1EnergyTransferModeType_DC_unique;
+            }
+            else if (energyArrayLen == 0) {
+                dlog(DLOG_LEVEL_WARNING, "Unable to configure SupportedEnergyTransferMode %s", element.get<std::string>());
+            }
+        }
+    }
 };
 
 void ISO15118_chargerImpl::handle_set_AC_EVSENominalVoltage(double& EVSENominalVoltage){
