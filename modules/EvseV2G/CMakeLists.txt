@@ -32,4 +32,5 @@ target_sources(${MODULE_NAME}
         v2g_ctx.c
         log.cpp
         charger/ISO15118_chargerImpl.cpp
+        sdp.c
 )
