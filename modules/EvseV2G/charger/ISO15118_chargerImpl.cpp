@@ -128,47 +128,61 @@ void ISO15118_chargerImpl::handle_set_SupportedEnergyTransferMode(Array& Support
 };
 
 void ISO15118_chargerImpl::handle_set_AC_EVSENominalVoltage(double& EVSENominalVoltage){
-    // your code for cmd set_AC_EVSENominalVoltage goes here
+    populate_physical_value(&v2g_ctx->ci_evse.evse_nominal_voltage, (long long int) EVSENominalVoltage, iso1unitSymbolType_V);
 };
 
 void ISO15118_chargerImpl::handle_set_DC_EVSECurrentRegulationTolerance(double& EVSECurrentRegulationTolerance){
-    // your code for cmd set_DC_EVSECurrentRegulationTolerance goes here
+    populate_physical_value(&v2g_ctx->ci_evse.evse_current_regulation_tolerance, (long long int) EVSECurrentRegulationTolerance, iso1unitSymbolType_A);
+    v2g_ctx->ci_evse.evse_current_regulation_tolerance_is_used = 1;
 };
 
 void ISO15118_chargerImpl::handle_set_DC_EVSEPeakCurrentRipple(double& EVSEPeakCurrentRipple){
-    // your code for cmd set_DC_EVSEPeakCurrentRipple goes here
+    populate_physical_value(&v2g_ctx->ci_evse.evse_peak_current_ripple, (long long int) EVSEPeakCurrentRipple, iso1unitSymbolType_A);
 };
 
 void ISO15118_chargerImpl::handle_set_ReceiptRequired(bool& ReceiptRequired){
-    // your code for cmd set_ReceiptRequired goes here
+    v2g_ctx->ci_evse.receipt_required = (int) ReceiptRequired;
 };
 
 void ISO15118_chargerImpl::handle_set_FreeService(bool& FreeService){
-    // your code for cmd set_FreeService goes here
+    v2g_ctx->ci_evse.charge_service.FreeService = (int) FreeService;
 };
 
 void ISO15118_chargerImpl::handle_set_EVSEEnergyToBeDelivered(double& EVSEEnergyToBeDelivered){
-    // your code for cmd set_EVSEEnergyToBeDelivered goes here
+    populate_physical_value(&v2g_ctx->ci_evse.evse_energy_to_be_delivered, (long long int) EVSEEnergyToBeDelivered, iso1unitSymbolType_Wh);
+    v2g_ctx->ci_evse.evse_energy_to_be_delivered_is_used = 1;
 };
 
 void ISO15118_chargerImpl::handle_enable_debug_mode(types::iso15118_charger::DebugMode& debug_mode){
-    // your code for cmd enable_debug_mode goes here
+    if (debug_mode == types::iso15118_charger::DebugMode::None) {
+        v2g_ctx->pncDebugMode = false;
+    } else {
+        v2g_ctx->pncDebugMode = true;
+    }
 };
 
 void ISO15118_chargerImpl::handle_set_Auth_Okay_EIM(bool& auth_okay_eim){
-    // your code for cmd set_Auth_Okay_EIM goes here
+    if (auth_okay_eim == true) {
+        v2g_ctx->ci_evse.evse_processing[PHASE_AUTH] = (uint8_t) iso1EVSEProcessingType_Finished;
+    } else {
+        v2g_ctx->ci_evse.evse_processing[PHASE_AUTH] = (uint8_t) iso1EVSEProcessingType_Ongoing;
+    }
 };
 
 void ISO15118_chargerImpl::handle_set_Auth_Okay_PnC(bool& auth_okay_pnc){
-    // your code for cmd set_Auth_Okay_PnC goes here
+    if (auth_okay_pnc == true) {
+        v2g_ctx->ci_evse.evse_processing[PHASE_AUTH] = (uint8_t) iso1EVSEProcessingType_Finished;
+    } else {
+        v2g_ctx->ci_evse.evse_processing[PHASE_AUTH] = (uint8_t) iso1EVSEProcessingType_Ongoing;
+    }
 };
 
 void ISO15118_chargerImpl::handle_set_FAILED_ContactorError(bool& ContactorError){
-    // your code for cmd set_FAILED_ContactorError goes here
+    // TODO your code for cmd set_FAILED_ContactorError goes here
 };
 
 void ISO15118_chargerImpl::handle_set_RCD_Error(bool& RCD){
-    // your code for cmd set_RCD_Error goes here
+    v2g_ctx->ci_evse.rcd = (int) RCD;
 };
 
 void ISO15118_chargerImpl::handle_stop_charging(bool& stop_charging){
@@ -177,54 +191,74 @@ void ISO15118_chargerImpl::handle_stop_charging(bool& stop_charging){
 
 void ISO15118_chargerImpl::handle_set_DC_EVSEPresentVoltageCurrent(
     types::iso15118_charger::DC_EVSEPresentVoltage_Current& EVSEPresentVoltage_Current){
-    // your code for cmd set_DC_EVSEPresentVoltageCurrent goes here
+    populate_physical_value_float(&v2g_ctx->ci_evse.evse_present_voltage, EVSEPresentVoltage_Current.EVSEPresentVoltage, 1, iso1unitSymbolType_V);
+    populate_physical_value_float(&v2g_ctx->ci_evse.evse_present_current, static_cast<float>(*EVSEPresentVoltage_Current.EVSEPresentCurrent), 1, iso1unitSymbolType_A);
 };
 
 void ISO15118_chargerImpl::handle_set_AC_EVSEMaxCurrent(double& EVSEMaxCurrent){
-    // your code for cmd set_AC_EVSEMaxCurrent goes here
+    v2g_ctx->basicConfig.evse_ac_current_limit = (float) EVSEMaxCurrent;
 };
 
 void ISO15118_chargerImpl::handle_set_DC_EVSEMaximumLimits(
     types::iso15118_charger::DC_EVSEMaximumLimits& EVSEMaximumLimits){
-    // your code for cmd set_DC_EVSEMaximumLimits goes here
+    populate_physical_value(&v2g_ctx->ci_evse.evse_maximum_current_limit, (long long int) EVSEMaximumLimits.EVSEMaximumCurrentLimit, iso1unitSymbolType_A);
+    v2g_ctx->ci_evse.evse_maximum_current_limit_is_used = 1;
+
+    struct iso1PhysicalValueType tmpPowerLimit;
+	populate_physical_value(&tmpPowerLimit, (long long int) EVSEMaximumLimits.EVSEMaximumPowerLimit, iso1unitSymbolType_W);
+	setMinPhysicalValue(&v2g_ctx->ci_evse.evse_maximum_power_limit, &tmpPowerLimit, &v2g_ctx->ci_evse.evse_maximum_power_limit_is_used);
+
+    populate_physical_value(&v2g_ctx->ci_evse.evse_maximum_voltage_limit, (long long int) EVSEMaximumLimits.EVSEMaximumVoltageLimit, iso1unitSymbolType_V);
+    v2g_ctx->ci_evse.evse_maximum_voltage_limit_is_used = 1;
 };
 
 void ISO15118_chargerImpl::handle_set_DC_EVSEMinimumLimits(
     types::iso15118_charger::DC_EVSEMinimumLimits& EVSEMinimumLimits){
-    // your code for cmd set_DC_EVSEMinimumLimits goes here
+    populate_physical_value(&v2g_ctx->ci_evse.evse_minimum_current_limit, (long long int) EVSEMinimumLimits.EVSEMinimumCurrentLimit, iso1unitSymbolType_A);
+
+    populate_physical_value(&v2g_ctx->ci_evse.evse_minimum_voltage_limit, (long long int) EVSEMinimumLimits.EVSEMinimumVoltageLimit, iso1unitSymbolType_V);
 };
 
 void ISO15118_chargerImpl::handle_set_EVSEIsolationStatus(
     types::iso15118_charger::IsolationStatus& EVSEIsolationStatus){
-    // your code for cmd set_EVSEIsolationStatus goes here
+    v2g_ctx->ci_evse.evse_isolation_status = (uint8_t) EVSEIsolationStatus;
+    v2g_ctx->ci_evse.evse_isolation_status_is_used = 1;
 };
 
 void ISO15118_chargerImpl::handle_set_EVSE_UtilityInterruptEvent(bool& EVSE_UtilityInterruptEvent){
-    // your code for cmd set_EVSE_UtilityInterruptEvent goes here
+    // utility interrupt event
+    if (EVSE_UtilityInterruptEvent == true)
+        memset(v2g_ctx->ci_evse.evse_status_code, (int) iso1DC_EVSEStatusCodeType_EVSE_UtilityInterruptEvent, sizeof(v2g_ctx->ci_evse.evse_status_code));
 };
 
 void ISO15118_chargerImpl::handle_set_EVSE_Malfunction(bool& EVSE_Malfunction){
-    // your code for cmd set_EVSE_Malfunction goes here
+    // EVSE Malfunction
+   if (EVSE_Malfunction == true)
+        memset(v2g_ctx->ci_evse.evse_status_code, (int) iso1DC_EVSEStatusCodeType_EVSE_Malfunction, sizeof(v2g_ctx->ci_evse.evse_status_code));
 };
 
 void ISO15118_chargerImpl::handle_set_EVSE_EmergencyShutdown(bool& EVSE_EmergencyShutdown){
-    // your code for cmd set_EVSE_EmergencyShutdown goes here
+    v2g_ctx->intl_emergency_shutdown = EVSE_EmergencyShutdown;
 };
 
 void ISO15118_chargerImpl::handle_set_MeterInfo(types::powermeter::Powermeter& powermeter){
-    // your code for cmd set_MeterInfo goes here
+    // TODO your code for cmd set_MeterInfo goes here
 };
 
 void ISO15118_chargerImpl::handle_contactor_closed(bool& status){
-    // your code for cmd contactor_closed goes here
+    v2g_ctx->ci_evse.contactor_is_closed = status;
 };
 
 void ISO15118_chargerImpl::handle_contactor_open(bool& status){
-    // your code for cmd contactor_open goes here
+    v2g_ctx->ci_evse.contactor_is_closed = !status;
 };
 
 void ISO15118_chargerImpl::handle_cableCheck_Finished(bool& status){
-    // your code for cmd cableCheck_Finished goes here
+    if (status == true) {
+        v2g_ctx->ci_evse.evse_processing[PHASE_ISOLATION] = (uint8_t) iso1EVSEProcessingType_Finished;
+    } else {
+        v2g_ctx->ci_evse.evse_processing[PHASE_ISOLATION] = (uint8_t) iso1EVSEProcessingType_Ongoing;
+    }
 };
 
 } // namespace charger
