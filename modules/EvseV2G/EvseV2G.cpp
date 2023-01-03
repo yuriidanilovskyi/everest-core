@@ -16,7 +16,7 @@ void EvseV2G::init() {
     invoke_init(*p_charger);
 
     dlog(DLOG_LEVEL_INFO, "starting SDP responder");
-    rv = sdp_listen(v2g_ctx);
+    rv = sdp_init(v2g_ctx);
 
     if (rv == -1) {
         dlog(DLOG_LEVEL_ERROR, "Failed to start SDP responder");
@@ -28,7 +28,19 @@ void EvseV2G::init() {
 }
 
 void EvseV2G::ready() {
+    int rv = 0;
+
     invoke_ready(*p_charger);
+
+    rv = sdp_listen(v2g_ctx);
+
+    if (rv == -1) {
+        dlog(DLOG_LEVEL_ERROR, "sdp_listen() failed");
+        goto err_out;
+    }
+    
+err_out:   
+    v2g_ctx_free(v2g_ctx);
 }
 
 EvseV2G::~EvseV2G() {

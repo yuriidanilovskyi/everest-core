@@ -268,6 +268,7 @@ struct v2g_context *v2g_ctx_create()
 
     ctx->network_read_timeout = 1000;
 
+    ctx->sdp_socket= -1;
     ctx->tcp_socket= -1;
     ctx->tls_socket.fd = -1;
     memset(&ctx->tls_log_ctx, 0, sizeof(keylogDebugCtx));

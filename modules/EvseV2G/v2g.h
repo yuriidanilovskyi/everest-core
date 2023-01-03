@@ -190,7 +190,8 @@ struct v2g_context {
     uint32_t network_read_timeout;  /* in milli seconds */
 
     enum tls_security_level tls_security;
-
+    
+    int sdp_socket;
     int tcp_socket;
     pthread_t tcp_thread;
 

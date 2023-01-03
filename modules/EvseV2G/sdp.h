@@ -13,6 +13,7 @@ extern "C"
 #include <stddef.h>
 #include "v2g.h"
 
+int sdp_init(struct v2g_context *v2g_ctx);
 int sdp_listen(struct v2g_context *v2g_ctx);
 
 #ifdef __cplusplus

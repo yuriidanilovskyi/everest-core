@@ -200,7 +200,7 @@ int sdp_send_response(int sdp_socket, struct sdp_query *sdp_query)
     return rv;
 }
 
-int sdp_listen(struct v2g_context *v2g_ctx)
+int sdp_init(struct v2g_context *v2g_ctx)
 {
     struct sockaddr_in6 sdp_addr = {
         .sin6_family = AF_INET6,
@@ -209,7 +209,7 @@ int sdp_listen(struct v2g_context *v2g_ctx)
     struct ipv6_mreq mreq = {
         .ipv6mr_multiaddr.s6_addr = IN6ADDR_ALLNODES,
     };
-    int sdp_socket, enable = 1;
+    int enable = 1;
 
     mreq.ipv6mr_interface = if_nametoindex(v2g_ctx->ifname);
     if (!mreq.ipv6mr_interface) {
@@ -227,41 +227,46 @@ int sdp_listen(struct v2g_context *v2g_ctx)
     }
 
     /* create receiving socket */
-    sdp_socket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
-    if (sdp_socket == -1) {
+    v2g_ctx->sdp_socket = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    if (v2g_ctx->sdp_socket == -1) {
         dlog(DLOG_LEVEL_ERROR, "socket() failed: %s", strerror(errno));
         return -1;
     }
 
-    if (setsockopt(sdp_socket, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) == -1) {
+    if (setsockopt(v2g_ctx->sdp_socket, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) == -1) {
         dlog(DLOG_LEVEL_ERROR, "setsockopt(SO_REUSEPORT) failed: %s", strerror(errno));
-        close(sdp_socket);
+        close(v2g_ctx->sdp_socket);
         return -1;
     }
-
-    /* Init pollfd struct */
-    struct pollfd pollfd = { sdp_socket, POLLIN, 0};
 
     sdp_addr.sin6_addr = in6addr_any;
 
     //sdp_addr.sin6_scope_id = mreq.ipv6mr_interface;
 
-    if (bind(sdp_socket, (struct sockaddr *)&sdp_addr, sizeof(sdp_addr)) == -1) {
+    if (bind(v2g_ctx->sdp_socket, (struct sockaddr *)&sdp_addr, sizeof(sdp_addr)) == -1) {
         dlog(DLOG_LEVEL_ERROR, "bind() failed: %s", strerror(errno));
-        close(sdp_socket);
+        close(v2g_ctx->sdp_socket);
         return -1;
     }
 
     dlog(DLOG_LEVEL_INFO, "SDP socket setup succeeded");
 
     /* join multicast group */
-    if (setsockopt(sdp_socket, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)) == -1) {
+    if (setsockopt(v2g_ctx->sdp_socket, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)) == -1) {
         dlog(DLOG_LEVEL_ERROR, "setsockopt(IPV6_JOIN_GROUP) failed: %s", strerror(errno));
-        close(sdp_socket);
+        close(v2g_ctx->sdp_socket);
         return -1;
     }
 
     dlog(DLOG_LEVEL_TRACE, "joined multicast group");
+
+    return 0;
+}
+
+int sdp_listen(struct v2g_context *v2g_ctx)
+{
+    /* Init pollfd struct */
+    struct pollfd pollfd = { v2g_ctx->sdp_socket, POLLIN, 0};
 
     while (!v2g_ctx->shutdown) {
         uint8_t buffer[SDP_HEADER_LEN + SDP_REQUEST_PAYLOAD_LEN];
@@ -286,7 +291,7 @@ int sdp_listen(struct v2g_context *v2g_ctx)
         }
         /* If new data was received, handle sdp request */
         if (status > 0) {
-            ssize_t len = recvfrom(sdp_socket, buffer, sizeof(buffer), 0, (struct sockaddr *)&sdp_query.remote_addr, &addrlen);
+            ssize_t len = recvfrom(v2g_ctx->sdp_socket, buffer, sizeof(buffer), 0, (struct sockaddr *)&sdp_query.remote_addr, &addrlen);
             if (len == -1) {
                 if (errno != EINTR)
                     dlog(DLOG_LEVEL_ERROR, "recvfrom() failed: %s", strerror(errno));
@@ -312,11 +317,11 @@ int sdp_listen(struct v2g_context *v2g_ctx)
                  addr, ntohs(sdp_query.remote_addr.sin6_port),
                  sdp_query.security_requested, sdp_query.proto_requested);
 
-            sdp_send_response(sdp_socket, &sdp_query);
+            sdp_send_response(v2g_ctx->sdp_socket, &sdp_query);
         }
     }
 
-    if (close(sdp_socket) == -1) {
+    if (close(v2g_ctx->sdp_socket) == -1) {
         dlog(DLOG_LEVEL_ERROR, "close() failed: %s", strerror(errno));
     }
 
