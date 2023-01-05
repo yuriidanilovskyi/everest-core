@@ -48,13 +48,13 @@ void ISO15118_chargerImpl::init() {
         v2g_ctx->tls_security = TLS_SECURITY_FORCE;
         dlog(DLOG_LEVEL_DEBUG, "tls_security force");
     }
-    else if (mod->config.tls_security.compare("prohibit") == 0) {
-        v2g_ctx->tls_security = TLS_SECURITY_PROHIBIT;
-        dlog(DLOG_LEVEL_DEBUG, "tls_security prohibit");
-    }
     else if (mod->config.tls_security.compare("allow") == 0) {
         v2g_ctx->tls_security = TLS_SECURITY_ALLOW;
         dlog(DLOG_LEVEL_DEBUG, "tls_security allow");
+    }
+    else {
+        v2g_ctx->tls_security = TLS_SECURITY_PROHIBIT;
+        dlog(DLOG_LEVEL_DEBUG, "tls_security prohibit");
     }
 }
 

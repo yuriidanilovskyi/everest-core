@@ -2,6 +2,7 @@
 // Copyright (C) 2022 chargebyte GmbH
 // Copyright (C) 2022 Contributors to EVerest
 #include "EvseV2G.hpp"
+#include "connection.h"
 #include "log.hpp"
 #include "sdp.h"
 
@@ -13,9 +14,21 @@ void EvseV2G::init() {
     int rv = 0;
     /* create v2g context */
     v2g_ctx = v2g_ctx_create();
+
+    if (v2g_ctx == NULL)
+        return;
+
     invoke_init(*p_charger);
 
     dlog(DLOG_LEVEL_INFO, "starting SDP responder");
+
+    rv = connection_init(v2g_ctx);
+
+    if (rv == -1) {
+        dlog(DLOG_LEVEL_ERROR, "Failed to initialize connection");
+        goto err_out;
+    }
+
     rv = sdp_init(v2g_ctx);
 
     if (rv == -1) {
@@ -23,7 +36,8 @@ void EvseV2G::init() {
         goto err_out;
     }
 
- err_out:
+    return;
+err_out:
     v2g_ctx_free(v2g_ctx);
 }
 

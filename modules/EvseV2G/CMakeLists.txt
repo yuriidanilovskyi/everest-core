@@ -33,4 +33,6 @@ target_sources(${MODULE_NAME}
         log.cpp
         charger/ISO15118_chargerImpl.cpp
         sdp.c
+        connection.c
+        tools.c
 )
