@@ -11,7 +11,9 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <dirent.h>
 #include "tools.h"
+#include "log.hpp"
 
 ssize_t safe_read(int fd, void *buf, size_t count)
 {
@@ -215,4 +217,104 @@ void round_down(const char *buffer, size_t len) {
 		return;
 
 	*(p + 2) = '\0';
+}
+
+bool get_dir_filename(char *file_name, uint8_t file_name_len, const char *path, const char *file_name_identifier) {
+
+	file_name[0] = '\0';
+
+	if (path == NULL) {
+		dlog(DLOG_LEVEL_ERROR, "invalid file path");
+		return false;
+	}
+	DIR * d = opendir(path); // open the path
+
+	if (d == NULL) {
+		dlog(DLOG_LEVEL_ERROR, "Unable to open file path %s", path);
+		return false;
+	}
+	struct dirent * dir; // for the directory entries
+	uint8_t file_name_identifier_len = strlen(file_name_identifier);
+	while ((dir = readdir(d)) != NULL) {
+		if(dir->d_type != DT_DIR) {
+			/* if the type is not directory*/
+			if((strlen(dir->d_name) > (file_name_identifier_len)) && /* Plus one for the numbering */
+					(strncmp(file_name_identifier, dir->d_name, file_name_identifier_len) == 0) &&
+					(file_name_len > strlen(dir->d_name))) {
+				strncpy(file_name, dir->d_name, strlen(dir->d_name) + 1);
+				break;
+			}
+		}
+	}
+
+	closedir(d);
+
+	return (file_name[0] != '\0');
+}
+
+uint8_t get_dir_numbered_file_names(char file_names[MAX_PKI_CA_LENGTH][MAX_FILE_NAME_LENGTH],
+								const char *path,
+								const char *prefix,
+								const char *suffix,
+								const uint8_t offset,
+								const uint8_t max_idx) {
+	if (NULL == path) {
+		dlog(DLOG_LEVEL_ERROR, "invalid file path");
+		return 0;
+	}
+
+	DIR * d = opendir(path); // open the path
+
+	if(d == NULL) {
+		dlog(DLOG_LEVEL_ERROR, "Unable to open file path %s", path);
+		return 0;
+	}
+	struct dirent * dir; // for the directory entries
+	uint8_t num_of_files = 0;
+	uint8_t prefix_len = strlen(prefix);
+	uint8_t suffix_len = strlen(suffix);
+	uint8_t min_idx = max_idx; // helper value to re-sort array
+
+	while (((dir = readdir(d)) != NULL) && (num_of_files != (max_idx - offset))) {
+		if(dir->d_type != DT_DIR) {
+			/* if the type is not directory*/
+			if((strlen(dir->d_name) > (prefix_len + suffix_len + 1)) && /* Plus one for the numbering */
+					(0 == strncmp(prefix, dir->d_name, prefix_len))) {
+				for(uint8_t idx = offset; idx < max_idx; idx++) {
+					/* Iterated over the number prefix */
+					if ((dir->d_name[prefix_len] == ('0' + idx)) &&
+							(strncmp(suffix, &dir->d_name[prefix_len+1], suffix_len) == 0)) {
+						if (MAX_FILE_NAME_LENGTH >= strlen(dir->d_name)) {
+							strcpy(file_names[idx], dir->d_name);
+							//dlog(DLOG_LEVEL_ERROR,"Cert-file found: %s", &AFileNames[idx]);
+							num_of_files++;
+							min_idx = min(min_idx, idx);
+						}
+						else {
+							dlog(DLOG_LEVEL_ERROR, "Max. file-name size exceeded. Only %i characters supported", MAX_FILE_NAME_LENGTH);
+							num_of_files = 0;
+							goto exit;
+						}
+					}
+				}
+			}
+		}
+		else
+			if(dir -> d_type == DT_DIR && strcmp(dir->d_name,".")!=0 && strcmp(dir->d_name,"..")!=0 ) {
+				/*if it is a directory*/
+			}
+	}
+	/* Re-sort array. This part fills gaps in the array. For example if there is only one file with
+	 * number _4_, the following code will cpy the file name of index 3 of the AFileNames array to
+	 * index 0 (In case AOffset is set to 0) */
+	if (min_idx != offset) {
+		for(uint8_t idx = offset; (idx - offset)  < num_of_files; idx++) {
+			strcpy(file_names[idx], file_names[min_idx + idx - offset]);
+		}
+	}
+
+exit:
+	closedir(d);
+
+	return num_of_files + offset;
 }

@@ -64,8 +64,6 @@
 #define EVSE_PROV_KEY_FILE_NAME "PROV_LEAF.key"
 #define MO_ROOT_CRT_NAME "MO_ROOT_CRT"
 #define V2G_ROOT_CRT_NAME "V2G_ROOT_CRT"
-#define MAX_FILE_NAME_LENGTH 100
-#define MAX_PKI_CA_LENGTH 4 /* leaf up to root certificate */
 #define MAX_V2G_ROOT_CERTS 10
 #define MAX_KEY_PW_LEN 32
 #define FORCE_PUB_MSG 25 // max msg cycles when topics values must be udpated
