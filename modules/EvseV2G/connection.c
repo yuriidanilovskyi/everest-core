@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (C) 2022 chargebyte GmbH
-// Copyright (C) 2022 Contributors to EVerest
+// Copyright (C) 2022-2023 chargebyte GmbH
+// Copyright (C) 2022-2023 Contributors to EVerest
 
 #include <arpa/inet.h>
 #include <inttypes.h>
@@ -15,10 +15,12 @@
 #include "connection.h"
 #include "tools.h"
 #include "log.hpp"
+#include "v2g_server.h"
 
 #define DEFAULT_SOCKET_BACKLOG  3
 #define DEFAULT_TCP_PORT        61341
 #define DEFAULT_TLS_PORT        64109
+#define ERROR_SESSION_ALREADY_STARTED  2
 
 static int connection_create_socket(struct sockaddr_in6 *sockaddr) {
 	socklen_t addrlen = sizeof(*sockaddr);
@@ -166,11 +168,71 @@ int connection_init(struct v2g_context* v2g_ctx) {
 	return 0;
 }
 
+static void connection_teardown(struct v2g_connection *conn) {
+	/* init charging state */
+	v2g_ctx_init_charging_state(conn->ctx, true);
+
+	/* open contactor */
+	// TODO: Publish DC/AC target contactor state
+
+	/* stop timer */
+	stop_timer(&conn->ctx->com_setup_timeout, NULL, conn->ctx);
+
+	/* print dlink status */
+	switch (conn->dlink_action) {
+		case MQTT_DLINK_ACTION_ERROR:
+			dlog( DLOG_LEVEL_TRACE, "d_link/error");
+			break;
+		case MQTT_DLINK_ACTION_TERMINATE:
+			dlog( DLOG_LEVEL_TRACE, "d_link/terminate");
+			break;
+		case MQTT_DLINK_ACTION_PAUSE:
+			dlog( DLOG_LEVEL_TRACE, "d_link/pause");
+			break;
+	}
+}
+
 /**
  * This is the 'main' function of a thread, which handles a TCP connection.
  */
 static void *connection_handle_tcp(void *data) {
-	// TODO: handle tcp connection
+	struct v2g_connection *conn = (struct v2g_connection *)data;
+	int rv = 0;
+
+	dlog(DLOG_LEVEL_INFO, "started new TCP connection thread");
+
+	/* check if the v2g-session is already running in another thread, if not, handle v2g-connection */
+	if (conn->ctx->state == 0) {
+		int rv2 = v2g_handle_connection(conn);
+
+		if (rv2 != 0) {
+			dlog(DLOG_LEVEL_INFO, "v2g_handle_connection exited with %d", rv2);
+		}
+	}
+	else {
+		rv = ERROR_SESSION_ALREADY_STARTED;
+		dlog(DLOG_LEVEL_WARNING, "%s", "Closing tcp-connection. v2g-session is already running");
+	}
+
+	/* tear down connection gracefully */
+	dlog(DLOG_LEVEL_INFO, "closing TCP connection");
+
+	if (shutdown(conn->conn.socket_fd, SHUT_RDWR) == -1) {
+		dlog(DLOG_LEVEL_ERROR, "shutdown() failed: %s", strerror(errno));
+	}
+	if (close(conn->conn.socket_fd) == -1) {
+		dlog(DLOG_LEVEL_ERROR, "close() failed: %s", strerror(errno));
+	}
+	dlog(DLOG_LEVEL_INFO, "TCP connection closed gracefully");
+
+	if (rv != ERROR_SESSION_ALREADY_STARTED) {
+		/* cleanup and notify lower layers */
+		connection_teardown(conn);
+	}
+
+	free(conn);
+
+	return NULL;
 }
 
 /**

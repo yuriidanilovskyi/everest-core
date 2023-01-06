@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (C) 2022 chargebyte GmbH
-// Copyright (C) 2022 Contributors to EVerest
+// Copyright (C) 2022-2023 chargebyte GmbH
+// Copyright (C) 2022-2023 Contributors to EVerest
 #include <errno.h>
 #include <string.h>
 #include <dirent.h>
@@ -351,4 +351,16 @@ void v2g_ctx_free(struct v2g_context *ctx)
         free(ctx->local_tcp_addr);
     if(ctx != NULL)
         free(ctx);
+}
+
+void stop_timer(struct event ** event_timer, char const * const timer_name, struct v2g_context *ctx) {
+	pthread_mutex_lock(&ctx->mqtt_lock);
+	if (NULL != *event_timer) {
+		event_free(*event_timer);
+		*event_timer = NULL; // Reset timer pointer
+		if (NULL != timer_name) {
+			dlog(DLOG_LEVEL_TRACE, "%s stopped", (timer_name == NULL)? "Timer" : timer_name);
+		}
+	}
+	pthread_mutex_unlock(&ctx->mqtt_lock);
 }

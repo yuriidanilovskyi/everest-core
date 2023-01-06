@@ -78,6 +78,14 @@ void v2g_ctx_init_charging_values(struct v2g_context * const ctx);
  */
 void v2g_ctx_free(struct v2g_context *ctx);
 
+/*!
+ * \brief stop_timer This function stops a event timer. Note: mqtt_lock mutex must be unclocked before
+ *  calling of this function.
+ * \param event_timer is the event timer.
+ * \param timer_name is the name of the event timer.
+ */
+void stop_timer(struct event ** event_timer, char const * const timer_name, struct v2g_context *ctx);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
