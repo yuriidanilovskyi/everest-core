@@ -35,4 +35,5 @@ target_sources(${MODULE_NAME}
         sdp.c
         connection.c
         tools.c
+        v2g_server.c
 )
