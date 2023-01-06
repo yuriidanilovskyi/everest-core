@@ -15,6 +15,7 @@ extern "C"
 #include "v2g_ctx.h"
 
 int connection_init(struct v2g_context* ctx);
+int connection_start_servers(struct v2g_context *ctx);
 
 #ifdef __cplusplus
 } // extern "C"

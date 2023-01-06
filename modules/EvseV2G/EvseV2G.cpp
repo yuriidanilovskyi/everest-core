@@ -36,6 +36,12 @@ void EvseV2G::init() {
         goto err_out;
     }
 
+    dlog(DLOG_LEVEL_INFO, "starting socket server(s)");
+	if (connection_start_servers(v2g_ctx)) {
+		dlog(DLOG_LEVEL_ERROR, "start_connection_servers() failed");
+		goto err_out;
+	}
+
     return;
 err_out:
     v2g_ctx_free(v2g_ctx);

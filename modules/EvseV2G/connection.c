@@ -165,3 +165,127 @@ int connection_init(struct v2g_context* v2g_ctx) {
 	}
 	return 0;
 }
+
+/**
+ * This is the 'main' function of a thread, which handles a TCP connection.
+ */
+static void *connection_handle_tcp(void *data) {
+	// TODO: handle tcp connection
+}
+
+/**
+ * This is the 'main' function of a thread, which handles a TLS connection.
+ */
+static void *connection_handle_tls(void *data) {
+	// TODO: handle tls connection
+}
+
+static void *connection_server(void *data) {
+	struct v2g_context *ctx = (struct v2g_context *)data;
+	struct v2g_connection *conn = NULL;
+	pthread_attr_t attr;
+
+	/* create the thread in detached state so we don't need to join every single one */
+	if (pthread_attr_init(&attr) != 0) {
+		dlog(DLOG_LEVEL_ERROR, "pthread_attr_init failed: %s", strerror(errno));
+		goto thread_exit;
+	}
+	if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
+		dlog(DLOG_LEVEL_ERROR, "pthread_attr_setdetachstate failed: %s", strerror(errno));
+		goto thread_exit;
+	}
+
+	while(1) {
+		char client_addr[INET6_ADDRSTRLEN];
+		struct sockaddr_in6 addr;
+		socklen_t addrlen = sizeof(addr);
+
+		/* cleanup old one and create new connection context */
+		free(conn);
+		conn = calloc(1, sizeof(*conn));
+		if (!conn) {
+			dlog(DLOG_LEVEL_ERROR, "calloc failed: %s", strerror(errno));
+			break;
+		}
+
+		/* setup common stuff */
+		conn->ctx = ctx;
+
+		/* if this thread is the TLS thread, then connections are TLS secured;
+		 * return code is non-zero if equal so align it
+		 */
+		conn->is_tls_connection = !!pthread_equal(pthread_self(), ctx->tls_thread);
+
+		/* wait for an incoming connection */
+		if (conn->is_tls_connection) {
+			conn->conn.ssl.ssl_config = &ctx->ssl_config;
+
+			/* at the moment, this is simply resetting the fd to -1; kept for upwards compatibility */
+			mbedtls_net_init(&conn->conn.ssl.tls_client_fd);
+
+			conn->conn.ssl.tls_client_fd.fd = accept(ctx->tls_socket.fd, (struct sockaddr *)&addr, &addrlen);
+			if (conn->conn.ssl.tls_client_fd.fd == -1) {
+				dlog(DLOG_LEVEL_ERROR, "accept(tls) failed: %s", strerror(errno));
+				continue;
+			}
+		} else {
+			conn->conn.socket_fd = accept(ctx->tcp_socket, (struct sockaddr *)&addr, &addrlen);
+			if (conn->conn.socket_fd == -1) {
+				dlog(DLOG_LEVEL_ERROR, "accept(tcp) failed: %s", strerror(errno));
+				continue;
+			}
+		}
+
+		if (inet_ntop(AF_INET6, &addr, client_addr, sizeof(client_addr)) != NULL) {
+			dlog(DLOG_LEVEL_INFO, "incoming connection on %s from [%s]:%" PRIu16, ctx->ifname, client_addr, ntohs(addr.sin6_port));
+		} else {
+			dlog(DLOG_LEVEL_ERROR, "incoming connection on %s, but inet_ntop failed: %s", ctx->ifname, strerror(errno));
+		}
+
+		if (pthread_create(&conn->thread_id, &attr,
+						   conn->is_tls_connection ? connection_handle_tls : connection_handle_tcp, conn) != 0) {
+			dlog(DLOG_LEVEL_ERROR, "pthread_create() failed: %s", strerror(errno));
+			continue;
+		}
+
+		/* is up to the thread to cleanup conn */
+		conn = NULL;
+	}
+
+thread_exit:
+	if (pthread_attr_destroy(&attr) != 0) {
+		dlog(DLOG_LEVEL_ERROR, "pthread_attr_destroy failed: %s", strerror(errno));
+	}
+
+	/* clean up if dangling */
+	free(conn);
+
+	return NULL;
+}
+
+int connection_start_servers(struct v2g_context *ctx) {
+	int rv, tcp_started = 0;
+
+	if (ctx->tcp_socket != -1) {
+		rv = pthread_create(&ctx->tcp_thread, NULL, connection_server, ctx);
+		if (rv != 0) {
+			dlog(DLOG_LEVEL_ERROR, "pthread_create(tcp) failed: %s", strerror(errno));
+			return -1;
+		}
+		tcp_started = 1;
+	}
+
+	if (ctx->tls_socket.fd != -1) {
+		rv = pthread_create(&ctx->tls_thread, NULL, connection_server, ctx);
+		if (rv != 0) {
+			if (tcp_started) {
+				pthread_cancel(ctx->tcp_thread);
+				pthread_join(ctx->tcp_thread, NULL);
+			}
+			dlog(DLOG_LEVEL_ERROR, "pthread_create(tls) failed: %s", strerror(errno));
+			return -1;
+		}
+	}
+
+	return 0;
+}
