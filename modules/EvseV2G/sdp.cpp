@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (C) 2022 chargebyte GmbH
-// Copyright (C) 2022 Contributors to EVerest
+// Copyright (C) 2022-2023 chargebyte GmbH
+// Copyright (C) 2022-2023 Contributors to EVerest
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -15,7 +15,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <poll.h>
-#include "v2g.h"
+#include "sdp.hpp"
 #include "log.hpp"
 
 #define DEBUG 1
@@ -203,11 +203,12 @@ int sdp_send_response(int sdp_socket, struct sdp_query *sdp_query)
 int sdp_init(struct v2g_context *v2g_ctx)
 {
     struct sockaddr_in6 sdp_addr = {
-        .sin6_family = AF_INET6,
-                .sin6_port = htons(SDP_SRV_PORT),
+        AF_INET6,
+        htons(SDP_SRV_PORT)
     };
     struct ipv6_mreq mreq = {
-        .ipv6mr_multiaddr.s6_addr = IN6ADDR_ALLNODES,
+        {IN6ADDR_ALLNODES},
+        0
     };
     int enable = 1;
 
@@ -310,8 +311,8 @@ int sdp_listen(struct v2g_context *v2g_ctx)
                 continue;
             }
 
-            sdp_query.security_requested = buffer[SDP_HEADER_LEN + 0];
-            sdp_query.proto_requested    = buffer[SDP_HEADER_LEN + 1];
+            sdp_query.security_requested = (sdp_security) buffer[SDP_HEADER_LEN + 0];
+            sdp_query.proto_requested    = (sdp_transport_protocol) buffer[SDP_HEADER_LEN + 1];
 
             dlog(DLOG_LEVEL_INFO, "received packet from [%s]:%" PRIu16 " with security 0x%02x and protocol 0x%02x",
                  addr, ntohs(sdp_query.remote_addr.sin6_port),

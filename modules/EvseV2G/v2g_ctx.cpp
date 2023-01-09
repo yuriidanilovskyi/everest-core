@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <unistd.h> // sleep
 
-#include "v2g_ctx.h"
+#include "v2g_ctx.hpp"
 #include "log.hpp"
 
 void init_physical_value(struct iso1PhysicalValueType * const physicalValue, iso1unitSymbolType unit) {
@@ -238,7 +238,7 @@ struct v2g_context *v2g_ctx_create()
 {
     struct v2g_context *ctx;
 
-    ctx = calloc(1, sizeof(*ctx));
+    ctx = (v2g_context*) calloc(1, sizeof(*ctx));
     if (!ctx)
         return NULL;
 

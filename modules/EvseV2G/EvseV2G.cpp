@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (C) 2022 chargebyte GmbH
-// Copyright (C) 2022 Contributors to EVerest
+// Copyright (C) 2022-2023 chargebyte GmbH
+// Copyright (C) 2022-2023 Contributors to EVerest
 #include "EvseV2G.hpp"
-#include "connection.h"
+#include "connection.hpp"
 #include "log.hpp"
-#include "sdp.h"
+#include "sdp.hpp"
 
 struct v2g_context *v2g_ctx = NULL;
 

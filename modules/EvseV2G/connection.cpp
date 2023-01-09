@@ -19,10 +19,10 @@
 #include <mbedtls/sha1.h>
 #include <mbedtls/ssl_cache.h>
 #include <mbedtls/ssl_internal.h>
-#include "connection.h"
-#include "tools.h"
+#include "connection.hpp"
+#include "tools.hpp"
 #include "log.hpp"
-#include "v2g_server.h"
+#include "v2g_server.hpp"
 
 #ifndef SYSCONFDIR
 #define SYSCONFDIR "/etc"
@@ -112,7 +112,7 @@ static int connection_create_socket(struct sockaddr_in6 *sockaddr) {
 
 int connection_init(struct v2g_context* v2g_ctx) {
 	if (v2g_ctx->tls_security != TLS_SECURITY_FORCE) {
-		v2g_ctx->local_tcp_addr = calloc(1, sizeof(*v2g_ctx->local_tcp_addr));
+		v2g_ctx->local_tcp_addr = (sockaddr_in6 *) calloc(1, sizeof(*v2g_ctx->local_tcp_addr));
 		if (v2g_ctx->local_tcp_addr == NULL) {
 			dlog(DLOG_LEVEL_ERROR, "Failed to allocate memory for TCP address");
 			return -1;
@@ -120,7 +120,7 @@ int connection_init(struct v2g_context* v2g_ctx) {
 	}
 
 	if (v2g_ctx->tls_security != TLS_SECURITY_PROHIBIT && v2g_ctx->evse_charging_type != CHARGING_TYPE_FAKE_HLC) {
-		v2g_ctx->local_tls_addr = calloc(1, sizeof(*v2g_ctx->local_tls_addr));
+		v2g_ctx->local_tls_addr = (sockaddr_in6 *) calloc(1, sizeof(*v2g_ctx->local_tls_addr));
 		if (!v2g_ctx->local_tls_addr) {
 			dlog(DLOG_LEVEL_ERROR, "Failed to allocate memory for TLS address");
 			return -1;
@@ -228,6 +228,8 @@ static bool connection_init_tls(struct v2g_context *ctx) {
 	int rv;
 
 	char * file_path = (char*) malloc(max(strlen(DEFAULT_PKI_PATH), strlen(DEFAULT_KEY_PATH)) + MAX_FILE_NAME_LENGTH);
+	uint8_t max_idx = 0;
+	mbedtls_x509_crt* root_crt = NULL;
 
 	/* Load supported v2g root certificates */
 
@@ -240,11 +242,10 @@ static bool connection_init_tls(struct v2g_context *ctx) {
 		goto error_out;
 	}
 
-	uint8_t max_idx = 0;
 	while((dir = readdir(d)) != NULL)
 		if((dir->d_type == DT_DIR) &&
 				(strlen(dir->d_name) &&
-				 isdigit(dir->d_name)) &&
+				 isdigit((int) dir->d_name[0])) &&
 				((atoi(dir->d_name) <= UINT8_MAX))) {
 			max_idx = max(max_idx, (uint8_t)(atoi(dir->d_name)));
 		}
@@ -256,7 +257,7 @@ static bool connection_init_tls(struct v2g_context *ctx) {
 	ctx->numOfTlsCrt = 0;
 	ctx->evseTlsCrt = (mbedtls_x509_crt *) malloc(sizeof(mbedtls_x509_crt) * (max_idx + 1));
 	ctx->evseTlsCrtKey = (mbedtls_pk_context *) malloc(sizeof(mbedtls_pk_context) * (max_idx + 1));
-	mbedtls_x509_crt * root_crt = &ctx->v2gRootCrt;
+	root_crt = &ctx->v2gRootCrt;
 
 	for (uint8_t pki_idx = 0; pki_idx <= max_idx; pki_idx++) {
 		mbedtls_x509_crt_init(&ctx->evseTlsCrt[pki_idx]);
@@ -662,7 +663,7 @@ static void *connection_server(void *data) {
 
 		/* cleanup old one and create new connection context */
 		free(conn);
-		conn = calloc(1, sizeof(*conn));
+		conn = (v2g_connection*) calloc(1, sizeof(*conn));
 		if (!conn) {
 			dlog(DLOG_LEVEL_ERROR, "calloc failed: %s", strerror(errno));
 			break;

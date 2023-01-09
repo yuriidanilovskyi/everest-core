@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (C) 2022 chargebyte GmbH
-// Copyright (C) 2022 Contributors to EVerest
+// Copyright (C) 2022-2023 chargebyte GmbH
+// Copyright (C) 2022-2023 Contributors to EVerest
 #ifndef EVSE_V2G_HPP
 #define EVSE_V2G_HPP
 
@@ -16,7 +16,7 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
-#include "v2g_ctx.h"
+#include "v2g_ctx.hpp"
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {

@@ -1,6 +1,6 @@
-/*
- * Copyright © 2017 I2SE GmbH
- */
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2022 chargebyte GmbH
+// Copyright (C) 2022 Contributors to EVerest
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <arpa/inet.h>
@@ -12,7 +12,7 @@
 #include <string.h>
 #include <time.h>
 #include <dirent.h>
-#include "tools.h"
+#include "tools.hpp"
 #include "log.hpp"
 
 ssize_t safe_read(int fd, void *buf, size_t count)
@@ -205,7 +205,7 @@ bool range_check_int64(int64_t min, int64_t max, int64_t value) {
 void round_down(const char *buffer, size_t len) {
 	char *p;
 
-	p = strchr(buffer, '.');
+	p = (char*) strchr(buffer, '.');
 
 	if (!p)
 		return;

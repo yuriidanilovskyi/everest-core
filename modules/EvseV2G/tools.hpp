@@ -4,11 +4,6 @@
 #ifndef TOOLS_H
 #define TOOLS_H
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 #include <stdio.h>
 #include <stddef.h>
 #include <time.h>
@@ -108,9 +103,5 @@ bool get_dir_filename(char *file_name, uint8_t file_name_len, const char *path, 
  * \return Returns the number of files which where found in the file path.
  */
 uint8_t get_dir_numbered_file_names(char file_names[MAX_PKI_CA_LENGTH][MAX_FILE_NAME_LENGTH], const char *path, const char *prefix, const char *suffix, const uint8_t offset, const uint8_t max_idx);
-
-#ifdef __cplusplus
-} // extern "C"
-#endif
 
 #endif /* TOOLS_H */

@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (C) 2022 chargebyte GmbH
-// Copyright (C) 2022 Contributors to EVerest
+// Copyright (C) 2022-2023 chargebyte GmbH
+// Copyright (C) 2022-2023 Contributors to EVerest
 #ifndef V2G_CTX_H
 #define V2G_CTX_H
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 #include <stdbool.h>
-#include "v2g.h"
+#include "v2g.hpp"
 
 #define PHY_VALUE_MULT_MIN -3
 #define PHY_VALUE_MULT_MAX 3
@@ -85,9 +80,5 @@ void v2g_ctx_free(struct v2g_context *ctx);
  * \param timer_name is the name of the event timer.
  */
 void stop_timer(struct event ** event_timer, char const * const timer_name, struct v2g_context *ctx);
-
-#ifdef __cplusplus
-} // extern "C"
-#endif
 
 #endif /* V2G_CTX_H */

@@ -3,7 +3,7 @@
 // Copyright (C) 2022 Contributors to EVerest
 #include "ISO15118_chargerImpl.hpp"
 #include "log.hpp"
-#include "v2g_ctx.h"
+#include "v2g_ctx.hpp"
 
 
 namespace module {

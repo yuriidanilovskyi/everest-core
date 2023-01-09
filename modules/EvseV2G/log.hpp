@@ -4,10 +4,6 @@
 #ifndef LOG_H
 #define LOG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif /* __cplusplus */
-
 /**
   * @brief Describe the intended log level of a message, or the maximum level a message must have to be displayed.
   */
@@ -71,9 +67,5 @@ dloglevel_t dlog_level_get(void);
 	do {                                                               \
 		dlog_func((level), __FILE__, __LINE__, __func__, ##__VA_ARGS__); \
 	} while (0)
-
-#ifdef __cplusplus
-}
-#endif /* __cplusplus */
 
 #endif                          /* LOG_H */

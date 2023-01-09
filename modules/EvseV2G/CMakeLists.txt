@@ -29,11 +29,11 @@ target_link_libraries(${MODULE_NAME}
 
 target_sources(${MODULE_NAME}
     PRIVATE
-        v2g_ctx.c
+        v2g_ctx.cpp
         log.cpp
         charger/ISO15118_chargerImpl.cpp
-        sdp.c
-        connection.c
-        tools.c
-        v2g_server.c
+        sdp.cpp
+        connection.cpp
+        tools.cpp
+        v2g_server.cpp
 )
