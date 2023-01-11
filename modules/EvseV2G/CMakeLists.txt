@@ -37,4 +37,6 @@ target_sources(${MODULE_NAME}
         connection.cpp
         tools.cpp
         v2g_server.cpp
+        iso_server.cpp
+        din_server.cpp
 )
