@@ -25,6 +25,7 @@ target_link_libraries(${MODULE_NAME}
         mbedcrypto
         mbedtls
         mbedx509
+        openv2g
 )
 
 target_sources(${MODULE_NAME}
