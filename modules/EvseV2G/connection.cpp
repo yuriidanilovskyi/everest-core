@@ -50,9 +50,6 @@ static const int v2g_cipher_suites[] = {
 	0
 };
 
-// extern mbedtls_ctr_drbg_context ctr_drbg;
-// extern mbedtls_ssl_cache_context cache;
-
 static int connection_create_socket(struct sockaddr_in6 *sockaddr) {
 	socklen_t addrlen = sizeof(*sockaddr);
 	int s, enable = 1;
@@ -197,6 +194,158 @@ int connection_init(struct v2g_context* v2g_ctx) {
 		break;
 	}
 	return 0;
+}
+
+/*!
+ * \brief is_sequence_timeout This function checks if a sequence timeout has occured.
+ * \param ts_start Is the time after waiting of the next request message.
+ * \param ctx is the v2g context.
+ * \return Returns \c true if a timeout has occured, otherwise \c false
+ */
+static bool is_sequence_timeout(struct timespec ts_start, struct v2g_context * ctx) {
+	struct timespec tsCurrent;
+	int sequence_timeout = V2G_SEQUENCE_TIMEOUT_60S;
+
+	if(((clock_gettime(CLOCK_MONOTONIC, &tsCurrent)) != 0) ||
+			(timespec_to_ms(timespec_sub(tsCurrent, ts_start)) > sequence_timeout)) {
+		dlog(DLOG_LEVEL_ERROR, "sequence timeout has occured (message: %s)", v2gMsgType[ctx->current_v2g_msg]);
+		return true;
+	}
+	return false;
+}
+
+/*!
+ * \brief connection_read This function reads from socket until requested bytes are received or sequence
+ * timeout is reached
+ * \param conn is the v2g connection context
+ * \param buf is the buffer to store the v2g message
+ * \param count is the number of bytes to read
+ * \return Returns \c true if a timeout has occured, otherwise \c false
+ */
+ssize_t connection_read(struct v2g_connection *conn, unsigned char *buf, size_t count) {
+	struct timespec ts_start;
+	int bytes_read = 0;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &ts_start) == -1) {
+		dlog(DLOG_LEVEL_ERROR, "clock_gettime(ts_start) failed: %s", strerror(errno));
+		return -1;
+	}
+
+	/* loop until we got all requested bytes or sequence timeout DIN [V2G-DC-432]*/
+	while ((bytes_read < count) &&
+		   (is_sequence_timeout(ts_start, conn->ctx) == false) &&
+		   (conn->ctx->is_connection_terminated == false)) { // [V2G2-536]
+
+		int c;
+
+		if (conn->is_tls_connection) {
+			c = mbedtls_ssl_read(&conn->conn.ssl.ssl_context, &buf[bytes_read], count - bytes_read);
+
+			if (c == MBEDTLS_ERR_SSL_WANT_READ || c == MBEDTLS_ERR_SSL_WANT_WRITE || c == MBEDTLS_ERR_SSL_TIMEOUT)
+				continue;
+
+			if (c == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY || c == MBEDTLS_ERR_SSL_CONN_EOF)
+				return bytes_read;
+
+			if (c < 0) {
+				char error_buf[100];
+				mbedtls_strerror(c, error_buf, sizeof(error_buf));
+				dlog(DLOG_LEVEL_ERROR, "mbedtls_ssl_read() error: %s", error_buf);
+
+				return -1;
+			}
+		} else {
+			/* use select for timeout handling */
+			struct timeval tv;
+			fd_set read_fds;
+
+			FD_ZERO(&read_fds);
+			FD_SET(conn->conn.socket_fd, &read_fds);
+
+			tv.tv_sec  = conn->ctx->network_read_timeout / 1000;
+			tv.tv_usec = (conn->ctx->network_read_timeout % 1000 ) * 1000;
+
+			c = select(conn->conn.socket_fd + 1, &read_fds, NULL, NULL, &tv);
+
+			if (c == -1) {
+				if (errno == EINTR)
+					continue;
+
+				return -1;
+			}
+
+			/* Zero fds ready means we timed out, so let upper loop check our sequence timeout */
+			if (c == 0) {
+				continue;
+			}
+
+			c = (int)read(conn->conn.socket_fd, &buf[bytes_read], count - bytes_read);
+
+			if (c == -1) {
+				if (errno == EINTR)
+					continue;
+
+				return -1;
+			}
+		}
+
+		/* return when peer closed connection */
+		if (c == 0)
+			return bytes_read;
+
+		bytes_read += c;
+	}
+
+	if (conn->ctx->is_connection_terminated == true) {
+		dlog(DLOG_LEVEL_ERROR, "Reading from tcp-socket aborted");
+		return -2;
+	}
+
+	return (ssize_t)bytes_read; // [V2G2-537] read bytes are currupted if reading from socket was interrupted (V2G_SECC_Sequence_Timeout)
+}
+
+/*!
+ * \brief connection_read This function writes to socket until bytes are written to the socket
+ * \param conn is the v2g connection context
+ * \param buf is the buffer where the v2g message is stored
+ * \param count is the number of bytes to write
+ * \return Returns \c true if a timeout has occured, otherwise \c false
+ */
+ssize_t connection_write(struct v2g_connection *conn, unsigned char *buf, size_t count) {
+	int bytes_written = 0;
+
+	/* loop until we got all requested bytes out */
+	while (bytes_written < count) {
+		int c;
+
+		if (conn->is_tls_connection) {
+			c = mbedtls_ssl_write(&conn->conn.ssl.ssl_context, &buf[bytes_written], count - bytes_written);
+
+			if (c == MBEDTLS_ERR_SSL_WANT_READ || c == MBEDTLS_ERR_SSL_WANT_WRITE)
+				continue;
+
+			if (c < 0)
+				return -1;
+
+		} else {
+			c = (int)write(conn->conn.socket_fd, &buf[bytes_written], count - bytes_written);
+
+			if (c == -1) {
+				if (errno == EINTR)
+					continue;
+
+				return -1;
+			}
+		}
+
+		/* return when peer closed connection */
+		if (c == 0)
+			return bytes_written;
+
+		bytes_written += c;
+	}
+
+	return (ssize_t)bytes_written;
 }
 
 static void connection_teardown(struct v2g_connection *conn) {

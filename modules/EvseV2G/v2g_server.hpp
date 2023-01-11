@@ -6,6 +6,28 @@
 
 #include "v2g.hpp"
 
+static const char* v2gMsgType[] = {
+	"Supported App Protocol",
+	"Session Setup",
+	"Service Discovery",
+	"Service Detail",
+	"Payment Service Selection",
+	"Payment Details",
+	"Authorization",
+	"Charge Parameter Discovery",
+	"Metering Receipt",
+	"Certificate Update",
+	"Certificate Installation",
+	"Charging Status",
+	"Cable Check",
+	"Pre Charge",
+	"Power Delivery",
+	"Current Demand",
+	"Welding Detection",
+	"Session Stop",
+	"Unknown",
+};
+
 /*!
  * \brief v2g_handle_connection This function handles a v2g-charging-session.
  * \param conn hold the context of the v2g-connection.
