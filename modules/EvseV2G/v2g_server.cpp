@@ -91,6 +91,205 @@ int v2g_outgoing_v2gtp(struct v2g_connection *conn) {
 	return 0;
 }
 
+/*!
+ * \brief v2g_handle_apphandshake After receiving a supportedAppProtocolReq message,
+ * the SECC shall process the received information. DIN [V2G-DC-436] ISO [V2G2-540]
+ * \param conn hold the context of the v2g-connection.
+ * \return Returns a v2g-event of type enum v2g_event.
+ */
+static enum v2g_event v2g_handle_apphandshake(struct v2g_connection *conn)
+{
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+    int i;
+    uint8_t ev_app_priority = 20; // lowest priority
+
+    /* validate handshake request and create response */
+    init_appHandEXIDocument(&conn->handshake_resp);
+    conn->handshake_resp.supportedAppProtocolRes_isUsed = 1;
+    conn->handshake_resp.supportedAppProtocolRes.ResponseCode = appHandresponseCodeType_Failed_NoNegotiation; // [V2G2-172]
+
+    dlog(DLOG_LEVEL_INFO, "Handling SupportedAppProtocolReq");
+    conn->ctx->current_v2g_msg = V2G_SUPPORTED_APP_PROTOCOL_MSG;
+
+    if (decode_appHandExiDocument(&conn->stream, &conn->handshake_req) != 0) {
+        dlog(DLOG_LEVEL_ERROR, "decode_appHandExiDocument() failed");
+        return V2G_EVENT_TERMINATE_CONNECTION; // If the mesage can't be decoded we have to terminate the tcp-connection (e.g. after an unexpected message)
+    }
+
+    for (i = 0; i < conn->handshake_req.supportedAppProtocolReq.AppProtocol.arrayLen ; i++) {
+        struct appHandAppProtocolType *app_proto = &conn->handshake_req.supportedAppProtocolReq.AppProtocol.array[i];
+        char *proto_ns = strndup((const char *)app_proto->ProtocolNamespace.characters, app_proto->ProtocolNamespace.charactersLen);
+
+        if (!proto_ns) {
+            dlog(DLOG_LEVEL_ERROR, "out-of-memory condition");
+            return V2G_EVENT_TERMINATE_CONNECTION;
+        }
+
+        dlog(DLOG_LEVEL_TRACE, "handshake_req: Namespace: %s, Version: %" PRIu32 ".%" PRIu32 ", SchemaID: %" PRIu8 ", Priority: %" PRIu8,
+             proto_ns, app_proto->VersionNumberMajor, app_proto->VersionNumberMinor, app_proto->SchemaID, app_proto->Priority);
+
+        if ((conn->ctx->supported_protocols & (1 << V2G_PROTO_DIN70121)) && (strcmp(proto_ns, DIN_70121_MSG_DEF) == 0) &&
+                (app_proto->VersionNumberMajor == DIN_70121_MAJOR) && (ev_app_priority >= app_proto->Priority)) {
+            conn->handshake_resp.supportedAppProtocolRes.ResponseCode = appHandresponseCodeType_OK_SuccessfulNegotiation;
+            ev_app_priority = app_proto->Priority;
+            conn->handshake_resp.supportedAppProtocolRes.SchemaID = app_proto->SchemaID;
+            conn->ctx->selected_protocol = V2G_PROTO_DIN70121;
+        }
+        else if ((conn->ctx->supported_protocols & (1 << V2G_PROTO_ISO15118_2013)) && (strcmp(proto_ns, ISO_15118_2013_MSG_DEF) == 0) &&
+                 (app_proto->VersionNumberMajor == ISO_15118_2013_MAJOR) && (ev_app_priority >= app_proto->Priority)) {
+
+            conn->handshake_resp.supportedAppProtocolRes.ResponseCode = appHandresponseCodeType_OK_SuccessfulNegotiation;
+            ev_app_priority = app_proto->Priority;
+            conn->handshake_resp.supportedAppProtocolRes.SchemaID = app_proto->SchemaID;
+            conn->ctx->selected_protocol = V2G_PROTO_ISO15118_2013;
+        }
+
+        // TODO: ISO15118v2
+
+        free(proto_ns);
+    }
+
+    if (conn->handshake_resp.supportedAppProtocolRes.ResponseCode == appHandresponseCodeType_OK_SuccessfulNegotiation) {
+        conn->handshake_resp.supportedAppProtocolRes.SchemaID_isUsed = (unsigned int) 1;
+        if (V2G_PROTO_DIN70121 == conn->ctx->selected_protocol) {
+            dlog(DLOG_LEVEL_INFO, "Protocol negotiation was successful. Selected protocol is DIN70121");
+
+            // Configure DIN 70121 protocol specific configuration
+            if (conn->ctx->evse_charging_type == CHARGING_TYPE_FAKE_HLC) {
+                /* Configure not standard conform three-phase AC transfer mode to force a charge abort by the EV,
+                   because the re-init mechanism, as described in ISO 15118, is not part of the DIN 70121 standard.*/
+                conn->ctx->ci_evse.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array[0] = iso1EnergyTransferModeType_AC_three_phase_core;
+            }
+        }
+        else if (V2G_PROTO_ISO15118_2013 == conn->ctx->selected_protocol) {
+            dlog(DLOG_LEVEL_INFO, "Protocol negotiation was successful. Selected protocol is ISO15118");
+        }
+        else if (V2G_PROTO_ISO15118_2010 == conn->ctx->selected_protocol) {
+            dlog(DLOG_LEVEL_INFO, "Protocol negotiation was successful. Selected protocol is ISO15118-2010");
+        }
+    }
+    else {
+        dlog(DLOG_LEVEL_ERROR, "No compatible protocol found");
+        next_event = V2G_EVENT_SEND_AND_TERMINATE; // Send response and terminate tcp-connection
+    }
+
+    if (true == conn->ctx->is_connection_terminated) {
+        dlog(DLOG_LEVEL_ERROR, "Connection is terminated. Abort charging");
+        return V2G_EVENT_TERMINATE_CONNECTION; // Abort charging without sending a response
+    }
+
+    /* Validate response code */
+    if ((true == conn->ctx->intl_emergency_shutdown) ||
+            (true == conn->ctx->stop_hlc) || (V2G_EVENT_SEND_AND_TERMINATE == next_event)) {
+        conn->handshake_resp.supportedAppProtocolRes.ResponseCode = appHandresponseCodeType_Failed_NoNegotiation;
+        dlog(DLOG_LEVEL_ERROR, "Abort charging session");
+        next_event = V2G_EVENT_SEND_AND_TERMINATE; // send response and terminate the tcp-connection
+    }
+
+    /* encode response at the right buffer location */
+    *(conn->stream.pos) = V2GTP_HEADER_LENGTH;
+    conn->stream.capacity = 8; // as it should be for send
+    conn->stream.buffer = 0;
+
+    if (0 != encode_appHandExiDocument(&conn->stream, &conn->handshake_resp)) {
+        dlog(DLOG_LEVEL_ERROR, "Encoding of the protocol handshake message failed");
+        next_event = V2G_EVENT_SEND_AND_TERMINATE;
+    }
+
+    return next_event;
+}
+
 int v2g_handle_connection(struct v2g_connection *conn) {
-	return -1; // TODO: Implement v2g connection message handler
+    int rv = -1;
+    enum v2g_event rvAppHandshake = V2G_EVENT_NO_EVENT;
+    int64_t startTime = 0; // in ms
+
+    enum v2g_protocol selected_protocol = V2G_UNKNOWN_PROTOCOL;
+    v2g_ctx_init_charging_state(conn->ctx, false);
+    conn->buffer = (uint8_t *)malloc(DEFAULT_BUFFER_SIZE);
+    if (!conn->buffer)
+        return -1;
+
+    /* static setup */
+    conn->stream.data = conn->buffer;
+    conn->stream.pos = &conn->buffer_pos;
+
+    /* Here is a good point to wait until the customer is ready for a resumed session,
+     * because we are waiting for the incoming message of the ev */
+    if (conn->dlink_action == MQTT_DLINK_ACTION_PAUSE) {
+        // TODO: D_LINK pause
+    }
+
+    do {
+        /* setup for receive */
+        conn->stream.buffer = 0;
+        conn->stream.capacity = 0; // Set to 8 for send and 0 for recv
+        conn->buffer_pos = 0;
+        conn->payload_len = 0;
+
+        /* next call return -1 on error, 1 when peer closed connection, 0 on success */
+        rv = v2g_incoming_v2gtp(conn);
+
+        if (rv != 0) {
+            dlog(DLOG_LEVEL_ERROR, "v2g_incoming_v2gtp() failed");
+            goto error_out;
+        }
+
+        if(conn->ctx->is_connection_terminated == true) {
+            rv = -1;
+            goto error_out;
+        }
+
+        /* next call return -1 on non-recoverable errors, 1 on recoverable errors, 0 on success */
+        rvAppHandshake = v2g_handle_apphandshake(conn);
+
+        if (rvAppHandshake == V2G_EVENT_IGNORE_MSG) {
+            dlog(DLOG_LEVEL_WARNING, "v2g_handle_apphandshake() failed, ignoring packet");
+        }
+    } while ((rv == 1) && (rvAppHandshake == V2G_EVENT_IGNORE_MSG));
+
+    /* stream setup for sending is done within v2g_handle_apphandshake */
+    /* send supportedAppRes message */
+    if ((rvAppHandshake == V2G_EVENT_SEND_AND_TERMINATE) ||
+            (rvAppHandshake == V2G_EVENT_NO_EVENT)) {
+        rv = v2g_outgoing_v2gtp(conn);
+
+        if (rv == -1) {
+            dlog(DLOG_LEVEL_ERROR, "v2g_outgoing_v2gtp() failed");
+            goto error_out;
+        }
+    }
+
+    /* terminate connection, if supportedApp handshake has failed */
+    if ((rvAppHandshake == V2G_EVENT_SEND_AND_TERMINATE)  ||
+            (rvAppHandshake == V2G_EVENT_TERMINATE_CONNECTION)) {
+        rv = -1;
+        goto error_out;
+    }
+
+    /* Backup the selected protocol, because this value is shared and can be reseted while unplugging. */
+    selected_protocol = conn->ctx->selected_protocol;
+
+error_out:
+    switch (selected_protocol) {
+        case V2G_PROTO_DIN70121:
+        case V2G_PROTO_ISO15118_2010:
+            free(conn->exi_in.dinEXIDocument);
+            free(conn->exi_out.dinEXIDocument);
+            break;
+        case V2G_PROTO_ISO15118_2013:
+            free(conn->exi_in.iso1EXIDocument);
+            free(conn->exi_out.iso1EXIDocument);
+            break;
+        default:
+            break;
+    }
+
+    if (conn->buffer != NULL) {
+        free(conn->buffer);
+    }
+
+    v2g_ctx_init_charging_state(conn->ctx, true);
+
+    return rv ? -1 : 0;
 }
