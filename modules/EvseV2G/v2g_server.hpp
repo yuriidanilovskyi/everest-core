@@ -35,4 +35,12 @@ static const char* v2gMsgType[] = {
  */
 int v2g_handle_connection(struct v2g_connection *conn);
 
+/*!
+ * \brief v2g_session_id_from_exi This function extracts session ID from an EXI stream.
+ * \param is_iso determines if ISO or DIN should be handled.
+ * \param exi_in holds the input EXI stream.
+ * \return Returns the extracted session ID.
+ */
+uint64_t v2g_session_id_from_exi(bool is_iso, void *exi_in);
+
 #endif /* V2G_SERVER_H */

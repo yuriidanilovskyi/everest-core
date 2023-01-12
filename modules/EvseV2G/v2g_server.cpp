@@ -460,3 +460,26 @@ error_out:
 
     return rv ? -1 : 0;
 }
+
+uint64_t v2g_session_id_from_exi(bool is_iso, void *exi_in) {
+	uint64_t session_id = 0;
+
+	if (is_iso) {
+		struct iso1EXIDocument *req = (struct iso1EXIDocument *)exi_in;
+		struct iso1MessageHeaderType *hdr = &req->V2G_Message.Header;
+
+		/* the provided session id could be smaller (error) in case that the peer did not
+		 * send our full session id back to us; this is why we init the id with 0 above
+		 * and only copy the provided byte len
+		 */
+		memcpy(&session_id, &hdr->SessionID.bytes, min(sizeof(session_id), hdr->SessionID.bytesLen));
+	} else {
+		struct dinEXIDocument *req = (struct dinEXIDocument *)exi_in;
+		struct dinMessageHeaderType *hdr = &req->V2G_Message.Header;
+
+		/* see comment above */
+		memcpy(&session_id, &hdr->SessionID.bytes, min(sizeof(session_id), hdr->SessionID.bytesLen));
+	}
+
+	return session_id;
+}
