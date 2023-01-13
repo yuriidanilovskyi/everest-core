@@ -84,7 +84,7 @@ static int iso_validate_response_code(iso1responseCodeType * const v2g_response_
 //=============================================
 
 /*!
- * \brief publish_iso_session_setup_req This function publishes the iso_session_setup_req message to the ci MQTT interface.
+ * \brief publish_iso_session_setup_req This function publishes the iso_session_setup_req message to the MQTT interface.
  * \param v2g_session_setup_req is the request message.
  * \param chargeport is the topic prefix port value.
  */
@@ -94,6 +94,14 @@ static void publish_iso_session_setup_req(struct iso1SessionSetupReqType const *
 	//TODO: publish evccid to EVCCIDD
 }
 
+/*!
+ * \brief publish_iso_service_discovery_req This function publishes the iso_service_discovery_req message to the MQTT interface.
+ * \param iso1ServiceDiscoveryReqType is the request message.
+ * \param chargeport is the topic prefix port value.
+ */
+static void publish_iso_service_discovery_req(struct iso1ServiceDiscoveryReqType const * const v2g_service_discovery_req, int chargeport) {
+	//TODO: V2G values that can be published: ServiceCategory, ServiceScope
+}
 
 //=============================================
 //             Request Handling
@@ -175,8 +183,76 @@ static enum v2g_event handle_iso_session_setup(struct v2g_connection *conn) {
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_service_discovery(struct v2g_connection *conn) {
-	//TODO: implement ServiceDiscovery handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1ServiceDiscoveryReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.ServiceDiscoveryReq;
+    struct iso1ServiceDiscoveryResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.ServiceDiscoveryRes;
+    enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
+    int8_t scope_idx = -1; // To find a list entry within the evse service list */
+
+    /* At first, publish the received ev request message to the MQTT interface */
+    publish_iso_service_discovery_req(req, conn->ctx->chargeport);
+
+    /* build up response */
+    res->ResponseCode = iso1responseCodeType_OK;
+
+    // Checking of the charge service id
+    if(conn->ctx->ci_evse.charge_service.ServiceID != V2G_SERVICE_ID_CHARGING) {
+        dlog(DLOG_LEVEL_WARNING, "Selected ServiceID is not ISO15118 conform. Correcting value to '1' (Charge service id)");
+        conn->ctx->ci_evse.charge_service.ServiceID = V2G_SERVICE_ID_CHARGING;
+    }
+    // Checking of the service category
+    if(conn->ctx->ci_evse.charge_service.ServiceCategory != iso1serviceCategoryType_EVCharging) {
+        dlog(DLOG_LEVEL_WARNING, "Selected ServiceCategory is not ISO15118 conform. Correcting value to '0' (EVCharging)");
+        conn->ctx->ci_evse.charge_service.ServiceCategory = iso1serviceCategoryType_EVCharging;
+    }
+
+    res->ChargeService = conn->ctx->ci_evse.charge_service;
+
+    // Checking of the payment options
+    if ((!conn->is_tls_connection) && 
+        ((conn->ctx->ci_evse.payment_option_list[0] == iso1paymentOptionType_Contract)||
+        (conn->ctx->ci_evse.payment_option_list[1] == iso1paymentOptionType_Contract)) && 
+        (false == conn->ctx->pncDebugMode)) {
+        conn->ctx->ci_evse.payment_option_list[0] = iso1paymentOptionType_ExternalPayment;
+        conn->ctx->ci_evse.payment_option_list_len = 1;
+        dlog(DLOG_LEVEL_WARNING, "PnC is not allowed without TLS-communication. Correcting value to '1' (ExternalPayment)");
+    }
+
+    memcpy(res->PaymentOptionList.PaymentOption.array, conn->ctx->ci_evse.payment_option_list, conn->ctx->ci_evse.payment_option_list_len * sizeof(iso1paymentOptionType));
+    res->PaymentOptionList.PaymentOption.arrayLen = conn->ctx->ci_evse.payment_option_list_len;
+
+    /* Find requested scope id within evse service list */
+    if (req->ServiceScope_isUsed) {
+        /* Check if ServiceScope is in evse ServiceList */
+        for(uint8_t idx = 0; idx < res->ServiceList.Service.arrayLen; idx++) {
+            if((res->ServiceList.Service.array[idx].ServiceScope_isUsed == (unsigned int) 1) && 
+            (strcmp(res->ServiceList.Service.array[idx].ServiceScope.characters, req->ServiceScope.characters) == 0)) {
+                scope_idx = idx;
+                break;
+            }
+        }
+    }
+
+    /*  The SECC always returns all supported services for all scopes if no specific ServiceScope has been
+    	indicated in request message. */
+    if(scope_idx == (int8_t) -1) {
+        memcpy(res->ServiceList.Service.array, conn->ctx->ci_evse.evse_service_list, sizeof(struct iso1ServiceType) * conn->ctx->ci_evse.evse_service_list_len);
+        res->ServiceList.Service.arrayLen = conn->ctx->ci_evse.evse_service_list_len;
+    }
+    else {
+        /* Offer only the requested ServiceScope entry */
+        res->ServiceList.Service.array[0] = conn->ctx->ci_evse.evse_service_list[scope_idx];
+        res->ServiceList.Service.arrayLen = 1;
+    }
+
+    res->ServiceList_isUsed = ((uint16_t) 0 < conn->ctx->ci_evse.evse_service_list_len) ? (unsigned int) 1 : (unsigned int) 0;
+
+    /* Check the current response code and check if no external error has occurred */
+    nextEvent = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+    /* Set next expected req msg */
+    conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_SVCDETAIL_PAYMENTSVCSEL; // [V2G-545]
+
+    return nextEvent;
 }
 
 /*!
