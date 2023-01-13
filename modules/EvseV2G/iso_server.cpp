@@ -103,6 +103,15 @@ static void publish_iso_service_discovery_req(struct iso1ServiceDiscoveryReqType
 	//TODO: V2G values that can be published: ServiceCategory, ServiceScope
 }
 
+/*!
+ * \brief publish_iso_payment_service_selection_req This function publishes the iso_payment_service_selection_req message to the MQTT interface.
+ * \param v2g_payment_service_selection_req is the request message.
+ * \param chargeport is the topic prefix port value.
+ */
+static void publish_iso_payment_service_selection_req(struct iso1PaymentServiceSelectionReqType const * const v2g_payment_service_selection_req) {
+    //TODO: V2G values that can be published: SelectedPaymentOption, SelectedServiceList
+}
+
 //=============================================
 //             Request Handling
 //=============================================
@@ -273,8 +282,77 @@ static enum v2g_event handle_iso_service_detail(struct v2g_connection *conn) {
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_payment_service_selection(struct v2g_connection *conn) {
-	//TODO: implement PaymentServiceSelection handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1PaymentServiceSelectionReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.PaymentServiceSelectionReq;
+    struct iso1PaymentServiceSelectionResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.PaymentServiceSelectionRes;
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+    uint8_t idx = 0;
+    bool list_element_found = false;
+
+    /* At first, publish the received ev request message to the customer mqtt interface */
+    publish_iso_payment_service_selection_req(req);
+
+    res->ResponseCode = iso1responseCodeType_OK;
+
+    /* check whether the selected payment option was announced at all;
+     * this also covers the case that the peer sends any invalid/unknown payment option
+     * in the message; if we are not happy -> bail out
+     */
+    for(idx = 0; idx < conn->ctx->ci_evse.payment_option_list_len; idx++) {
+        if((conn->ctx->ci_evse.payment_option_list[idx] == req->SelectedPaymentOption)) {
+            list_element_found = true;
+            break;
+        }
+    }
+    res->ResponseCode = (list_element_found == true)? res->ResponseCode : iso1responseCodeType_FAILED_PaymentSelectionInvalid; // [V2G2-465]
+
+    /* Check the selected services */
+    bool charge_service_found = false;
+    bool selected_services_found = true;
+
+    for (uint8_t req_idx = 0; (req_idx < req->SelectedServiceList.SelectedService.arrayLen) && (selected_services_found == true); req_idx++) {
+
+        /* Check if it's a charging service */
+        if(req->SelectedServiceList.SelectedService.array[req_idx].ServiceID == V2G_SERVICE_ID_CHARGING) {
+            charge_service_found = true;
+        }
+        /* Otherwise check if the selected service is in the stored in the service list */
+        else {
+            bool entry_found = false;
+            for (uint8_t ci_idx = 0; (ci_idx < conn->ctx->ci_evse.evse_service_list_len) && (entry_found == false); ci_idx++) {
+
+                if (req->SelectedServiceList.SelectedService.array[req_idx].ServiceID == conn->ctx->ci_evse.evse_service_list[ci_idx].ServiceID) {
+                    /* If it's stored, search for the next requested SelectedService entry */
+                    dlog(DLOG_LEVEL_INFO,"Selected service id %i found", conn->ctx->ci_evse.evse_service_list[ci_idx].ServiceID);
+                    entry_found = true;
+                    break;
+                }
+            }
+            if (entry_found == false) {
+                /* If the requested SelectedService entry was not found, break up service list check */
+                selected_services_found = false;
+                break;
+            }
+        }
+    }
+
+    res->ResponseCode = (selected_services_found == false)? iso1responseCodeType_FAILED_ServiceSelectionInvalid : res->ResponseCode; // [V2G2-467]
+    res->ResponseCode = (charge_service_found == false)? iso1responseCodeType_FAILED_NoChargeServiceSelected : res->ResponseCode; // [V2G2-804]
+
+    /* Check the current response code and check if no external error has occurred */
+    next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+    if (req->SelectedPaymentOption == iso1paymentOptionType_Contract) {
+        dlog(DLOG_LEVEL_INFO, "SelectedPaymentOption: Contract");
+        /* Set next expected req msg */
+        conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_PAYMENTDETAILS_CERTINST_CERTUPD; // [V2G-551] (iso specification describes only the ac case... )
+    }
+    else {
+        dlog(DLOG_LEVEL_INFO, "SelectedPaymentOption: ExternalPayment");
+        /* Set next expected req msg */
+        conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_AUTHORIZATION; // [V2G-551] (iso specification describes only the ac case... )
+    }
+
+    return next_event;
 }
 
 /*!
