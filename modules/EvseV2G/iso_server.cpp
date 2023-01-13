@@ -4,10 +4,41 @@
 
 #include <openv2g/iso1EXIDatatypes.h>
 #include <string.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "iso_server.hpp"
 #include "log.hpp"
 #include "v2g_server.hpp"
+#include "v2g_ctx.hpp"
+#include "tools.hpp"
+
+/*!
+ * \brief iso_validate_response_code This function checks if an external error has occurred (sequence error, user abort) ... ).
+ * \param iso_response_code is a pointer to the current response code. The value will be modified if an external error has occurred.
+ * \param conn the structure with the external error information.
+ * \return Returns \c 1 if the charging must be terminated after sending the response message, returns \c -1 if charging must be aborted immediately.
+ */
+static int iso_validate_response_code(iso1responseCodeType * const v2g_response_code, struct v2g_connection const * const conn) {
+	//TODO: validate response code
+	return V2G_EVENT_NO_EVENT;
+}
+
+//=============================================
+//             Publishing request msg
+//=============================================
+
+/*!
+ * \brief publish_iso_session_setup_req This function publishes the iso_session_setup_req message to the ci MQTT interface.
+ * \param v2g_session_setup_req is the request message.
+ * \param chargeport is the topic prefix port value.
+ */
+static void publish_iso_session_setup_req(struct iso1SessionSetupReqType const * const v2g_session_setup_req, int chargeport) {
+	uint64_t evccid = 0;
+	memcpy(&evccid, v2g_session_setup_req->EVCCID.bytes, min(v2g_session_setup_req->EVCCID.bytesLen, iso1SessionSetupReqType_EVCCID_BYTES_SIZE));
+	//TODO: publish evccid to EVCCIDD
+}
 
 
 //=============================================
@@ -20,8 +51,67 @@
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_session_setup(struct v2g_connection *conn) {
-	//TODO: implement SessionSetup handling
-	return V2G_EVENT_NO_EVENT;
+	struct iso1SessionSetupReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.SessionSetupReq;
+	struct iso1SessionSetupResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.SessionSetupRes;
+	char buffer[iso1SessionSetupReqType_EVCCID_BYTES_SIZE * 3 - 1 + 1]; /* format: (%02x:) * n - (1x ':') + (1x NULL) */
+	int i;
+	enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+
+	/* At first, publish the received EV request message to the customer MQTT interface */
+	publish_iso_session_setup_req(req, conn->ctx->chargeport);
+
+	/* format EVCC ID */
+	for (i = 0; i < req->EVCCID.bytesLen; i++) {
+		sprintf(&buffer[i * 3], "%02" PRIx8 ":", req->EVCCID.bytes[i]);
+	}
+	if (i)
+		buffer[i * 3 - 1] = '\0';
+	else
+		buffer[0] = '\0';
+
+	dlog(DLOG_LEVEL_INFO, "SessionSetupReq.EVCCID: %s", strlen(buffer) ? buffer : "(zero length provided)");
+
+	/* un-arm a potentially communication setup timeout */
+	stop_timer(&conn->ctx->com_setup_timeout, "session_setup: V2G_COMMUNICATION_SETUP_TIMER", conn->ctx);
+
+	/* [V2G2-756]: If the SECC receives a SessionSetupReq including a SessionID value which is not
+	 * equal to zero (0) and not equal to the SessionID value stored from the preceding V2G
+	 * Communication Session, it shall send a SessionID value in the SessionSetupRes message that is
+	 * unequal to "0" and unequal to the SessionID value stored from the preceding V2G Communication
+	 * Session and indicate the new V2G Communication Session with the ResponseCode set to
+	 * "OK_NewSessionEstablished"
+	 */
+
+	//TODO: handle resuming sessions [V2G2-463]
+
+	/* Now fill the evse response message */
+	res->ResponseCode = iso1responseCodeType_OK_NewSessionEstablished;
+
+	/* Check and init session id */
+	/* If no session id is configured, generate one */
+	srand((unsigned int) time(NULL));
+	if(conn->ctx->ci_evse.session_id == (uint64_t)0) {
+		conn->ctx->ci_evse.session_id = ((uint64_t) rand() << 48) | ((uint64_t) rand() << 32) | ((uint64_t) rand() << 16) | (uint64_t) rand();
+		dlog(DLOG_LEVEL_INFO, "No session_id found. Generating random session id.");
+	}
+	conn->ctx->resume_data.session_id = conn->ctx->ci_evse.session_id;
+	dlog(DLOG_LEVEL_INFO, "Created new session with id 0x%08" PRIu64, conn->ctx->resume_data.session_id);
+
+	/* TODO: publish EVCCID to MQTT */
+
+	res->EVSEID.charactersLen = conn->ctx->ci_evse.evse_id.bytesLen;
+	memcpy(res->EVSEID.characters, conn->ctx->ci_evse.evse_id.bytes, conn->ctx->ci_evse.evse_id.bytesLen);
+
+	res->EVSETimeStamp_isUsed = conn->ctx->ci_evse.date_time_now_is_used;
+	res->EVSETimeStamp = time(NULL);
+
+	/* Check the current response code and check if no external error has occurred */
+	next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+	/* Set next expected req msg */
+	conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_SERVICEDISCOVERY; // [V2G-543]
+
+	return next_event;
 }
 
 /*!
