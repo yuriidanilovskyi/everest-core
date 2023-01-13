@@ -46,6 +46,35 @@ enum class iso_dc_state_id {
 	WAIT_FOR_TERMINATED_SESSION
 };
 
+static const char* isoResponse[] = {
+	"Response OK",
+	"New Session Established",
+	"Old Session Joined",
+	"Certificate Expires Soon",
+	"Response FAILED",
+	"Sequence Error",
+	"Service ID Invalid",
+	"Unknown Session",
+	"Service Selection Invalid",
+	"Payment Selection Invalid",
+	"Certificate Expired",
+	"Signature Error",
+	"No Certificate Available",
+	"Cert Chain Error",
+	"Challenge Invalid",
+	"Contract Canceled",
+	"Wrong Charge Parameter",
+	"Power Delivery Not Applied",
+	"Tariff Selection Invalid",
+	"Charging Profile Invalid",
+	"Metering Signature Not Valid",
+	"No Charge Service Selected",
+	"Wrong Energy Transfer Mode",
+	"Contactor Error",
+	"Certificate Not Allowed At This EVSE",
+	"Certificate Revoked",
+};
+
 static const struct iso_state iso_ac_states[] = {
 	{ "Waiting for SessionSetupReq", 1 << V2G_SESSION_SETUP_MSG },
 	/* [V2G-543] Expected req msg after SessionSetupRes */

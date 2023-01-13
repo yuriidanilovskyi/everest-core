@@ -15,14 +15,68 @@
 #include "tools.hpp"
 
 /*!
+ * \brief iso_validate_state This function checks whether the received message is expected and valid at this
+ * point in the communication sequence state machine. The current v2g msg type must be set with the current v2g msg state. [V2G2-538]
+ * \param state is the current state of the charging session
+ * \param current_v2g_msg is the current handled v2g message
+ * \param is_dc_charging is \c true if it is a DC charging session
+ * \return Returns a iso1responseCode with sequence error if current_v2g_msg is not expected, otherwise OK.
+ */
+static iso1responseCodeType iso_validate_state(int state, enum V2gMsgTypeId current_v2g_msg, bool is_dc_charging) {
+
+	int allowed_requests = (true == is_dc_charging) ? iso_dc_states[state].allowed_requests : iso_ac_states[state].allowed_requests; // dc_charging is determined in charge_parameter. dc
+	return (allowed_requests & (1 << current_v2g_msg)) ? iso1responseCodeType_OK : iso1responseCodeType_FAILED_SequenceError;
+
+}
+
+/*!
  * \brief iso_validate_response_code This function checks if an external error has occurred (sequence error, user abort) ... ).
  * \param iso_response_code is a pointer to the current response code. The value will be modified if an external error has occurred.
  * \param conn the structure with the external error information.
- * \return Returns \c 1 if the charging must be terminated after sending the response message, returns \c -1 if charging must be aborted immediately.
+ * \return Returns \c 2 if the charging must be terminated after sending the response message, returns \c 1 if charging must be aborted immediately and
+ * 0 if no error
  */
 static int iso_validate_response_code(iso1responseCodeType * const v2g_response_code, struct v2g_connection const * const conn) {
-	//TODO: validate response code
-	return V2G_EVENT_NO_EVENT;
+	enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+	iso1responseCodeType response_code_tmp;
+
+	if (conn->ctx->is_connection_terminated == true) {
+		dlog(DLOG_LEVEL_ERROR, "Connection is terminated. Abort charging");
+		return V2G_EVENT_TERMINATE_CONNECTION;
+	}
+
+	/* If MQTT user abort or emergency shutdown has occurred */
+	if((conn->ctx->stop_hlc == true) || (conn->ctx->intl_emergency_shutdown == true)) {
+		*v2g_response_code = iso1responseCodeType_FAILED;
+	}
+
+	/* [V2G-DC-390]: at this point we must check whether the given request is valid at this step;
+	 * the idea is that we catch this error in each function below to respond with a valid
+	 * encoded message; note, that the handler functions below must not access v2g_session in
+	 * error path, since it might not be set, yet!
+	 */
+	response_code_tmp = iso_validate_state(conn->ctx->state, conn->ctx->current_v2g_msg, conn->ctx->is_dc_charger); // [V2G2-538]
+
+	*v2g_response_code = (response_code_tmp >= iso1responseCodeType_FAILED)? response_code_tmp : *v2g_response_code;
+
+	/* [V2G2-460]: check whether the session id matches the expected one of the active session */
+	*v2g_response_code = ((conn->ctx->current_v2g_msg != V2G_SESSION_SETUP_MSG) && (conn->ctx->resume_data.session_id != conn->ctx->received_session_id))?
+							 iso1responseCodeType_FAILED_UnknownSession : *v2g_response_code;
+
+	/* set return value to 1 if the EVSE cannot process this request message */
+	if (*v2g_response_code >= iso1responseCodeType_FAILED) {
+		next_event = V2G_EVENT_SEND_AND_TERMINATE; // [V2G2-539], [V2G2-034] Send response and terminate tcp-connection
+
+		/* check if the ISO response is within the range of the enum. If not, then the out of range response code will be printed */
+		if ((*v2g_response_code >= iso1responseCodeType_OK ) && (*v2g_response_code  <= iso1responseCodeType_FAILED_CertificateRevoked)) {
+			dlog(DLOG_LEVEL_ERROR, "Failed response code detected for message \"%s\", error: %s", v2gMsgType[conn->ctx->current_v2g_msg], isoResponse[*v2g_response_code]);
+		}
+		else {
+			dlog(DLOG_LEVEL_ERROR, "Failed response code detected for message \"%s\", Invalid response code: %d", v2gMsgType[conn->ctx->current_v2g_msg], *v2g_response_code);
+		}
+	}
+
+	return next_event;
 }
 
 //=============================================
