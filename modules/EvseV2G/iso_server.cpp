@@ -423,6 +423,14 @@ static void publish_iso_current_demand_req(struct iso1CurrentDemandReqType const
     //                                                  RemainingTimeToFullSoC
 }
 
+/*!
+ * \brief publish_iso_metering_receipt_req This function publishes the iso_metering_receipt_req message to the MQTT interface.
+ * \param v2g_metering_receipt_req is the request message.
+ */
+static void publish_iso_metering_receipt_req(struct iso1MeteringReceiptReqType const * const v2g_metering_receipt_req) {
+    // TODO: publish PnC only
+}
+
 //=============================================
 //             Request Handling
 //=============================================
@@ -1059,8 +1067,47 @@ static enum v2g_event handle_iso_charging_status(struct v2g_connection *conn) {
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_metering_receipt(struct v2g_connection *conn) {
-	//TODO: implement MeteringRecipt handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1MeteringReceiptReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.MeteringReceiptReq;
+    struct iso1MeteringReceiptResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.MeteringReceiptRes;
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+
+    /* At first, publish the received ev request message to the MQTTinterface */
+    publish_iso_metering_receipt_req(req);
+
+    dlog(DLOG_LEVEL_TRACE, "EVSE side: meteringReceipt called");
+    dlog(DLOG_LEVEL_TRACE, "\tReceived data:");
+
+    dlog(DLOG_LEVEL_TRACE, "\t\t ID=%c%c%c", req->Id.characters[0], req->Id.characters[1], req->Id.characters[2]);
+    dlog(DLOG_LEVEL_TRACE, "\t\t SAScheduleTupleID=%d", req->SAScheduleTupleID);
+    dlog(DLOG_LEVEL_TRACE, "\t\t SessionID=%d", req->SessionID.bytes[1]);
+    dlog(DLOG_LEVEL_TRACE, "\t\t MeterInfo.MeterStatus=%d", req->MeterInfo.MeterStatus);
+    dlog(DLOG_LEVEL_TRACE, "\t\t MeterInfo.MeterID=%d", req->MeterInfo.MeterID.characters[0]);
+    dlog(DLOG_LEVEL_TRACE, "\t\t MeterInfo.isused.MeterReading=%d", req->MeterInfo.MeterReading_isUsed);
+    dlog(DLOG_LEVEL_TRACE, "\t\t MeterReading.Value=%lu", (long unsigned int)req->MeterInfo.MeterReading);
+    dlog(DLOG_LEVEL_TRACE, "\t\t MeterInfo.TMeter=%li", (long int)req->MeterInfo.TMeter);
+
+    res->ResponseCode = iso1responseCodeType_OK;
+
+
+    if (conn->ctx->is_dc_charger == false) {
+        /* for AC charging we respond with AC_EVSEStatus */
+        res->EVSEStatus_isUsed = 0;
+        res->AC_EVSEStatus_isUsed = 1;
+        res->DC_EVSEStatus_isUsed = 0;
+        populate_ac_evse_status(conn->ctx, &res->AC_EVSEStatus);
+    }
+    else {
+        res->DC_EVSEStatus_isUsed = 1;
+        res->AC_EVSEStatus_isUsed = 0;
+    }
+
+    /* Check the current response code and check if no external error has occurred */
+    next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+    /* Set next expected req msg */
+    conn->ctx->state = (conn->ctx->is_dc_charger == false)? (int) iso_ac_state_id::WAIT_FOR_CHARGINGSTATUS_POWERDELIVERY : (int) iso_dc_state_id::WAIT_FOR_CURRENTDEMAND_POWERDELIVERY; // [V2G2-580]/[V2G-797]
+
+    return next_event;
 }
 
 /*!
