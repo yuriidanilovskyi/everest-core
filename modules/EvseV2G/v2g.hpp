@@ -308,6 +308,17 @@ struct v2g_context {
     } ci_evse;
 
     struct {
+        iso1paymentOptionType iso_selected_payment_option;
+        uint8_t gen_challenge[16]; // for PnC
+
+        struct{
+            bool valid_crt;
+            mbedtls_x509_crt crt;
+            mbedtls_ecdsa_context pubkey;
+        } contract; // for PnC
+    } session;
+
+    struct {
         struct {
             int bulkChargingComplete;
             int chargingComplete;

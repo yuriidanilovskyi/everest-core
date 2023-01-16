@@ -231,6 +231,10 @@ void v2g_ctx_init_charging_values(struct v2g_context * const ctx) {
         ctx->ci_evse.evse_processing[PHASE_PARAMETER] = iso1EVSEProcessingType_Finished; // Skip parameter-phase
     }
 
+    /* Init session values */
+    ctx->session.iso_selected_payment_option = iso1paymentOptionType_ExternalPayment;
+    memset(ctx->session.gen_challenge, 0, sizeof(ctx->session.gen_challenge));
+
     initialize_once = true;
 }
 

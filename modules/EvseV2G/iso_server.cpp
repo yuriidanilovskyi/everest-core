@@ -79,6 +79,17 @@ static int iso_validate_response_code(iso1responseCodeType * const v2g_response_
 	return next_event;
 }
 
+/*!
+ * \brief check_iso1_signature This function validates the iso1SignatureType type
+ * \param AIso1Signature is the signature of the ISO EXI fragment
+ * \param APublicKey is the public key to validate the signature against the ISO EXI fragment
+ * \param Aiso1ExiFragment Aiso1ExiFragment is the ISO EXI fragment
+ */
+static bool check_iso1_signature(const struct iso1SignatureType * AIso1Signature, mbedtls_ecdsa_context * APublicKey, struct iso1EXIFragment * Aiso1ExiFragment) {
+	//TODO: Implement signature check
+    return true;
+}
+
 //=============================================
 //             Publishing request msg
 //=============================================
@@ -110,6 +121,14 @@ static void publish_iso_service_discovery_req(struct iso1ServiceDiscoveryReqType
  */
 static void publish_iso_payment_service_selection_req(struct iso1PaymentServiceSelectionReqType const * const v2g_payment_service_selection_req) {
     //TODO: V2G values that can be published: SelectedPaymentOption, SelectedServiceList
+}
+
+/*!
+ * \brief publish_iso_authorization_req This function publishes the publish_iso_authorization_req message to the MQTT interface.
+ * \param v2g_authorization_req is the request message.
+ */
+static void publish_iso_authorization_req(struct iso1AuthorizationReqType const * const v2g_authorization_req) {
+    //TODO: V2G values that can be published: Id, Id_isUsed, GenChallenge, GenChallenge_isUsed
 }
 
 //=============================================
@@ -373,8 +392,67 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection *conn) {
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_authorization(struct v2g_connection *conn) {
-	//TODO: implement Authorization handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1AuthorizationReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.AuthorizationReq;
+    struct iso1AuthorizationResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.AuthorizationRes;
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+
+    /* At first, publish the received ev request message to the customer mqtt interface */
+    publish_iso_authorization_req(req);
+
+    res->ResponseCode = iso1responseCodeType_OK;
+
+    if (conn->ctx->last_v2g_msg != V2G_AUTHORIZATION_MSG) { /* [V2G2-684] */
+        if (conn->ctx->session.iso_selected_payment_option == iso1paymentOptionType_Contract) {
+            if (req->GenChallenge_isUsed == 0 || req->GenChallenge.bytesLen != 16 // [V2G2-697]  The GenChallenge field shall be exactly 128 bits long.
+                || memcmp(req->GenChallenge.bytes, conn->ctx->session.gen_challenge, 16) != 0) {
+                dlog(DLOG_LEVEL_ERROR, "Challenge invalid or not present");
+                res->ResponseCode = iso1responseCodeType_FAILED_ChallengeInvalid; // [V2G2-475]
+                goto error_out;
+            }
+            if (conn->exi_in.iso1EXIDocument->V2G_Message.Header.Signature_isUsed == 0) {
+                dlog(DLOG_LEVEL_ERROR, "Missing signature (Signature_isUsed == 0)");
+                res->ResponseCode = iso1responseCodeType_FAILED_SignatureError;
+                goto error_out;
+            }
+
+            /* Validation of the received signature */
+            struct iso1EXIFragment iso1_fragment;
+            init_iso1EXIFragment(&iso1_fragment);
+
+            iso1_fragment.AuthorizationReq_isUsed = 1u;
+            memcpy(&iso1_fragment.AuthorizationReq, req, sizeof(*req));
+
+            if (check_iso1_signature(&conn->exi_in.iso1EXIDocument->V2G_Message.Header.Signature, 
+                &conn->ctx->session.contract.pubkey, &iso1_fragment) == false) {
+                res->ResponseCode = iso1responseCodeType_FAILED_SignatureError;
+                goto error_out;
+            }
+        }
+
+        /* Configure EVSE-Processing to 'Finish' if PnC-offline mode is running, otherwise wait for MQTT signal */
+        if ((conn->ctx->session.iso_selected_payment_option == iso1paymentOptionType_Contract) && 
+            (conn->ctx->pncOnlineMode == false)) {
+            dlog(DLOG_LEVEL_INFO, "Verification of the authorization req signature was successful!");
+            res->EVSEProcessing = iso1EVSEProcessingType_Finished;
+        }
+        else {
+            res->EVSEProcessing = (iso1EVSEProcessingType) conn->ctx->ci_evse.evse_processing[PHASE_AUTH];
+        }
+    }
+    else {
+        // ExternalPayment
+        res->EVSEProcessing = (iso1EVSEProcessingType) conn->ctx->ci_evse.evse_processing[PHASE_AUTH];
+    }
+
+error_out:
+    /* Check the current response code and check if no external error has occurred */
+    next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+    /* Set next expected req msg */
+    conn->ctx->state = (iso1EVSEProcessingType_Finished == res->EVSEProcessing) ? 
+        (int) iso_dc_state_id::WAIT_FOR_CHARGEPARAMETERDISCOVERY : (int) iso_dc_state_id::WAIT_FOR_AUTHORIZATION; // [V2G-573] (AC) , [V2G-687] (DC)
+
+    return next_event;
 }
 
 /*!
