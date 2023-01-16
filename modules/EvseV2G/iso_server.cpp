@@ -7,12 +7,22 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <openv2g/EXITypes.h>
+#include <openv2g/iso1EXIDatatypes.h>
+#include <openv2g/iso1EXIDatatypesEncoder.h>
+#include <openv2g/xmldsigEXIDatatypes.h>
+#include <openv2g/xmldsigEXIDatatypesEncoder.h>
+#include <mbedtls/error.h>
+#include <mbedtls/sha256.h>
 
 #include "iso_server.hpp"
 #include "log.hpp"
 #include "v2g_server.hpp"
 #include "v2g_ctx.hpp"
 #include "tools.hpp"
+
+#define MAX_EXI_SIZE 8192
+#define DIGEST_SIZE 32
 
 /*!
  * \brief iso_validate_state This function checks whether the received message is expected and valid at this
@@ -80,13 +90,147 @@ static int iso_validate_response_code(iso1responseCodeType * const v2g_response_
 }
 
 /*!
- * \brief check_iso1_signature This function validates the iso1SignatureType type
- * \param AIso1Signature is the signature of the ISO EXI fragment
- * \param APublicKey is the public key to validate the signature against the ISO EXI fragment
- * \param Aiso1ExiFragment Aiso1ExiFragment is the ISO EXI fragment
+ * \brief convertIso1ToXmldsigSignedInfoType This function copies V2G iso1SignedInfoType struct into xmldsigSignedInfoType struct type
+ * \param xmld_sig_signed_info is the destination struct
+ * \param iso1_signed_info is the source struct
  */
-static bool check_iso1_signature(const struct iso1SignatureType * AIso1Signature, mbedtls_ecdsa_context * APublicKey, struct iso1EXIFragment * Aiso1ExiFragment) {
-	//TODO: Implement signature check
+static void convertIso1ToXmldsigSignedInfoType(struct xmldsigSignedInfoType* xmld_sig_signed_info,
+                                               const struct iso1SignedInfoType* iso1_signed_info) {
+    init_xmldsigSignedInfoType(xmld_sig_signed_info);
+
+    for(uint8_t idx = 0; idx < iso1_signed_info->Reference.arrayLen; idx++) {
+        const struct iso1ReferenceType *iso1_ref = &iso1_signed_info->Reference.array[idx];
+        struct xmldsigReferenceType *xmld_sig_ref = &xmld_sig_signed_info->Reference.array[idx];
+
+        xmld_sig_ref->DigestMethod.Algorithm.charactersLen = iso1_ref->DigestMethod.Algorithm.charactersLen;
+        memcpy(xmld_sig_ref->DigestMethod.Algorithm.characters, iso1_ref->DigestMethod.Algorithm.characters,
+               iso1_ref->DigestMethod.Algorithm.charactersLen);
+        // TODO: Not all elements are copied yet
+        xmld_sig_ref->DigestMethod.ANY_isUsed = 0;
+        xmld_sig_ref->DigestValue.bytesLen = iso1_ref->DigestValue.bytesLen;
+        memcpy(xmld_sig_ref->DigestValue.bytes, iso1_ref->DigestValue.bytes,  iso1_ref->DigestValue.bytesLen);
+
+        xmld_sig_ref->Id_isUsed = iso1_ref->Id_isUsed;
+        if (0 != iso1_ref->Id_isUsed) memcpy(xmld_sig_ref->Id.characters, iso1_ref->Id.characters, iso1_ref->Id.charactersLen);
+        xmld_sig_ref->Id.charactersLen = iso1_ref->Id.charactersLen;
+        xmld_sig_ref->Transforms_isUsed = iso1_ref->Transforms_isUsed;
+
+        xmld_sig_ref->Transforms.Transform.arrayLen = iso1_ref->Transforms.Transform.arrayLen;
+        xmld_sig_ref->Transforms.Transform.array[0].Algorithm.charactersLen =
+                iso1_ref->Transforms.Transform.array[0].Algorithm.charactersLen;
+        memcpy(xmld_sig_ref->Transforms.Transform.array[0].Algorithm.characters,
+                iso1_ref->Transforms.Transform.array[0].Algorithm.characters,
+                iso1_ref->Transforms.Transform.array[0].Algorithm.charactersLen);
+        xmld_sig_ref->Transforms.Transform.array[0].XPath.arrayLen = iso1_ref->Transforms.Transform.array[0].XPath.arrayLen;
+        xmld_sig_ref->Transforms.Transform.array[0].ANY_isUsed = 0;
+        xmld_sig_ref->Type_isUsed = iso1_ref->Type_isUsed;
+        xmld_sig_ref->URI_isUsed = iso1_ref->URI_isUsed;
+        xmld_sig_ref->URI.charactersLen = iso1_ref->URI.charactersLen;
+        if (0 != iso1_ref->URI_isUsed) memcpy(xmld_sig_ref->URI.characters, iso1_ref->URI.characters, iso1_ref->URI.charactersLen);
+    }
+
+    xmld_sig_signed_info->Reference.arrayLen = iso1_signed_info->Reference.arrayLen;
+    xmld_sig_signed_info->CanonicalizationMethod.ANY_isUsed = 0;
+    xmld_sig_signed_info->Id_isUsed = iso1_signed_info->Id_isUsed;
+    if (0 != iso1_signed_info->Id_isUsed) memcpy(xmld_sig_signed_info->Id.characters, iso1_signed_info->Id.characters, iso1_signed_info->Id.charactersLen);
+    xmld_sig_signed_info->Id.charactersLen = iso1_signed_info->Id.charactersLen;
+    memcpy(xmld_sig_signed_info->CanonicalizationMethod.Algorithm.characters,
+           iso1_signed_info->CanonicalizationMethod.Algorithm.characters,
+           iso1_signed_info->CanonicalizationMethod.Algorithm.charactersLen);
+    xmld_sig_signed_info->CanonicalizationMethod.Algorithm.charactersLen =
+            iso1_signed_info->CanonicalizationMethod.Algorithm.charactersLen;
+
+    xmld_sig_signed_info->SignatureMethod.HMACOutputLength_isUsed = iso1_signed_info->SignatureMethod.HMACOutputLength_isUsed;
+    xmld_sig_signed_info->SignatureMethod.Algorithm.charactersLen = iso1_signed_info->SignatureMethod.Algorithm.charactersLen;
+    memcpy(xmld_sig_signed_info->SignatureMethod.Algorithm.characters, iso1_signed_info->SignatureMethod.Algorithm.characters,
+           iso1_signed_info->SignatureMethod.Algorithm.charactersLen);
+    xmld_sig_signed_info->SignatureMethod.ANY_isUsed = 0;
+}
+
+/*!
+ * \brief check_iso1_signature This function validates the ISO signature
+ * \param iso1_signature is the signature of the ISO EXI fragment
+ * \param public_key is the public key to validate the signature against the ISO EXI fragment
+ * \param iso1_exi_fragment iso1_exi_fragment is the ISO EXI fragment
+ */
+static bool check_iso1_signature(const struct iso1SignatureType* iso1_signature, mbedtls_ecdsa_context* public_key, struct iso1EXIFragment* iso1_exi_fragment) {
+    /** Digest check **/
+    int err = 0;
+    const struct iso1SignatureType* sig = iso1_signature;
+    unsigned char buf[MAX_EXI_SIZE];
+    size_t buffer_pos = 0;
+    const struct iso1ReferenceType *req_ref = &sig->SignedInfo.Reference.array[0];
+    bitstream_t stream = { MAX_EXI_SIZE, buf, &buffer_pos, 0, 8 /* Set to 8 for send and 0 for recv */};
+    uint8_t digest[DIGEST_SIZE];
+    err = encode_iso1ExiFragment(&stream, iso1_exi_fragment);
+    if (err != 0) {
+        dlog(DLOG_LEVEL_ERROR, "unable to encode fragment, error code = %d", err);
+        return false;
+    }
+    mbedtls_sha256(buf, buffer_pos, digest, 0);
+
+    if (req_ref->DigestValue.bytesLen != DIGEST_SIZE) {
+        dlog(DLOG_LEVEL_ERROR, "invalid digest length %u in signature", req_ref->DigestValue.bytesLen);
+        return false;
+    }
+
+    if (memcmp(req_ref->DigestValue.bytes, digest, DIGEST_SIZE) != 0) {
+        dlog(DLOG_LEVEL_ERROR, "invalid digest in signature");
+        return false;
+    }
+
+    /** Validate signature **/
+    struct xmldsigEXIFragment sig_fragment;
+    init_xmldsigEXIFragment(&sig_fragment);
+    sig_fragment.SignedInfo_isUsed = 1;
+    convertIso1ToXmldsigSignedInfoType(&sig_fragment.SignedInfo, &sig->SignedInfo);
+
+    buffer_pos = 0;
+    err = encode_xmldsigExiFragment(&stream, &sig_fragment);
+
+    if (err != 0) {
+        dlog(DLOG_LEVEL_ERROR, "unable to encode XML signature fragment, error code = %d", err);
+        return false;
+    }
+
+    /* Hash the signature */
+    mbedtls_sha256(buf, buffer_pos, digest, 0);
+
+    /* Validate the ecdsa signature using the public key */
+    if (0 == sig->SignatureValue.CONTENT.bytesLen) {
+        dlog(DLOG_LEVEL_ERROR, "signature len is invalid (%i)", sig->SignatureValue.CONTENT.bytesLen);
+        return false;
+    }
+
+    /* Init mbedtls parameter */
+    mbedtls_ecp_group ecp_group;
+    mbedtls_ecp_group_init(&ecp_group);
+
+    mbedtls_mpi mpi_r;
+    mbedtls_mpi_init(&mpi_r);
+    mbedtls_mpi mpi_s;
+    mbedtls_mpi_init(&mpi_s);
+
+    mbedtls_mpi_read_binary(&mpi_r, (const unsigned char *) &sig->SignatureValue.CONTENT.bytes[0], sig->SignatureValue.CONTENT.bytesLen/2);
+    mbedtls_mpi_read_binary(&mpi_s, (const unsigned char *) &sig->SignatureValue.CONTENT.bytes[sig->SignatureValue.CONTENT.bytesLen/2], sig->SignatureValue.CONTENT.bytesLen/2);
+
+	err = mbedtls_ecp_group_load(&ecp_group, MBEDTLS_ECP_DP_SECP256R1);
+	
+    if (err  == 0) {
+        err = mbedtls_ecdsa_verify(&ecp_group, (const unsigned char *) digest, 32, &public_key->Q, &mpi_r, &mpi_s);
+    }
+
+    mbedtls_ecp_group_free(&ecp_group);
+    mbedtls_mpi_free(&mpi_r);
+    mbedtls_mpi_free(&mpi_s);
+
+    if (err != 0) {
+        char error_buf[100];
+        mbedtls_strerror(err, error_buf, sizeof(error_buf));
+        dlog(DLOG_LEVEL_ERROR, "invalid signature, error code = -0x%08x, %s", err, error_buf);
+        return false;
+    }
+
     return true;
 }
 
