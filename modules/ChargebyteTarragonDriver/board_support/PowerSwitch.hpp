@@ -33,7 +33,7 @@
 
 class PowerSwitch {
 public:
-    PowerSwitch();
+    PowerSwitch(bool sense_1_active, bool sense_2_active);
     ~PowerSwitch();
     bool switchOnSinglePhase();
     bool switchOnThreePhase();
@@ -47,6 +47,15 @@ public:
 private:
     bool relaisOn;
     bool relaisHealthy;
+    bool sense_1_active;
+    bool sense_2_active;
+
+    bool isActiveRelay1();
+    bool isActiveRelay2();
+    void enableRelay1();
+    void disableRelay1();
+    void enableRelay2();
+    void disableRelay2();
 
     const uint32_t relaisHoldingPercent = 30;
 

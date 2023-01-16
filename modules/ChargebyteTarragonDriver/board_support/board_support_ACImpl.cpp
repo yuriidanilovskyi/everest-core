@@ -50,7 +50,15 @@ void board_support_ACImpl::init() {
     // initialize gpio and pwm
 
     control_pilot_hal = std::make_shared<ControlPilot_HAL>();
-    power_switch = std::make_shared<PowerSwitch>();
+    bool sense_1_active = false;
+    if (this->mod->config.sense_1_mode == "active") {
+        sense_1_active = true;
+    }
+    bool sense_2_active = false;
+    if (this->mod->config.sense_2_mode == "active") {
+        sense_2_active = true;
+    }
+    power_switch = std::make_shared<PowerSwitch>(sense_1_active, sense_2_active);
     control_pilot = std::make_shared<ControlPilot>(control_pilot_hal, power_switch);
 }
 

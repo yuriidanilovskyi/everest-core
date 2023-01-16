@@ -1,5 +1,19 @@
 description: Driver module for the chargebyte's Tarragon hardware platform
-config: {}
+config:
+  sense_1_mode:
+    description: Sense input needs reference to neutral (N) and can be wired for "active" or "inactive" feedback
+    type: string
+    enum:
+      - active
+      - inactive
+    default: active
+  sense_2_mode:
+    description: Sense input needs reference to neutral (N) and can be wired for "active" or "inactive" feedback
+    type: string
+    enum:
+      - active
+      - inactive
+    default: active
 provides:
   board_support:
     interface: board_support_AC

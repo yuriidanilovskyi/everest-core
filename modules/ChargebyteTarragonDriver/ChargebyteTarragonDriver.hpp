@@ -19,7 +19,10 @@
 
 namespace module {
 
-struct Conf {};
+struct Conf {
+    std::string sense_1_mode;
+    std::string sense_2_mode;
+};
 
 class ChargebyteTarragonDriver : public Everest::ModuleBase {
 public:

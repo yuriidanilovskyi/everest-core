@@ -12,7 +12,7 @@
 #include <chrono>
 #include <thread>
 
-PowerSwitch::PowerSwitch() {
+PowerSwitch::PowerSwitch(bool sense_1_active, bool sense_2_active) : sense_1_active(sense_1_active), sense_2_active(sense_2_active) {
     // get max phase count and current
     relay_1_path = boost::filesystem::path("/sys/class/gpio/gpio76/value");
     Everest::Utils::wait_until_exists_exception(relay_1_path, std::chrono::milliseconds(200));
@@ -36,9 +36,8 @@ PowerSwitch::PowerSwitch() {
     if (relaisHealthy) {
         EVLOG_info << "relays healthy";
     } else {
-        EVLOG_info << "relays not healthy";
+        EVLOG_warn << "relays not healthy";
     }
-    // printf("Powerswitch initialized: %i\n", relaisHealthy);
 }
 
 PowerSwitch::~PowerSwitch() {
@@ -49,24 +48,58 @@ bool PowerSwitch::isOn() {
     return relaisOn;
 }
 
+bool PowerSwitch::isActiveRelay1() {
+    auto relay_1_sense = Everest::Utils::sysfs_read_string(relay_1_sense_path);
+
+    if (this->sense_1_active && relay_1_sense == "1") {
+        return true;
+    } else if (!this->sense_1_active && relay_1_sense == "0") {
+        return true;
+    }
+
+    return false;
+}
+
+bool PowerSwitch::isActiveRelay2() {
+    auto relay_2_sense = Everest::Utils::sysfs_read_string(relay_2_sense_path);
+
+    if (this->sense_2_active && relay_2_sense == "1") {
+        return true;
+    } else if (!this->sense_2_active && relay_2_sense == "0") {
+        return true;
+    }
+
+    return false;
+}
+
+void PowerSwitch::enableRelay1() {
+    Everest::Utils::sysfs_write_string(relay_1_path, "1");
+}
+
+void PowerSwitch::disableRelay1() {
+    Everest::Utils::sysfs_write_string(relay_1_path, "0");
+}
+
+void PowerSwitch::enableRelay2() {
+    Everest::Utils::sysfs_write_string(relay_2_path, "1");
+}
+
+void PowerSwitch::disableRelay2() {
+    Everest::Utils::sysfs_write_string(relay_2_path, "0");
+}
+
 bool PowerSwitch::switchOnSinglePhase() {
-
+    // FIXME: there might be no hardware support for this
     if (relaisHealthy) {
-        Everest::Utils::sysfs_write_string(relay_1_path, "1");
-        Everest::Utils::sysfs_write_string(relay_2_path, "0");
-
+        enableRelay1();
         std::this_thread::sleep_for(std::chrono::milliseconds(relaisDelay));
         relaisOn = true;
         // TODO: no hardware support?
         // setPWML1(relaisHoldingPercent);
         // setPWML2L3(0);
 
-        auto relay_1_sense = Everest::Utils::sysfs_read_string(relay_1_sense_path);
-        auto relay_2_sense = Everest::Utils::sysfs_read_string(relay_2_sense_path);
-
-        EVLOG_info << "switchOnSinglePhase, relay_1_sense: " << relay_1_sense << " relay_2_sense: " << relay_2_sense;
-        // FIXME: is this assumption correct?
-        if (relay_1_sense == "0" && relay_2_sense == "0")
+        // EVLOG_info << "switchOnSinglePhase";
+        if (isActiveRelay1())
             relaisHealthy = true;
         else
             relaisHealthy = false;
@@ -76,9 +109,7 @@ bool PowerSwitch::switchOnSinglePhase() {
 
 bool PowerSwitch::switchOnThreePhase() {
     if (relaisHealthy) {
-        Everest::Utils::sysfs_write_string(relay_1_path, "1");
-        Everest::Utils::sysfs_write_string(relay_2_path, "1");
-
+        enableRelay1();
         std::this_thread::sleep_for(std::chrono::milliseconds(relaisDelay));
         relaisOn = true;
         // TODO: no hardware support?
@@ -86,12 +117,8 @@ bool PowerSwitch::switchOnThreePhase() {
         // setPWML1(relaisHoldingPercent);
         // setPWML2L3(relaisHoldingPercent);
 
-        auto relay_1_sense = Everest::Utils::sysfs_read_string(relay_1_sense_path);
-        auto relay_2_sense = Everest::Utils::sysfs_read_string(relay_2_sense_path);
-
-        EVLOG_info << "switchOnThreePhase, relay_1_sense: " << relay_1_sense << " relay_2_sense: " << relay_2_sense;
-        // FIXME: is this assumption correct?
-        if (relay_1_sense == "0" && relay_2_sense == "0")
+        // EVLOG_info << "switchOnThreePhase";
+        if (isActiveRelay1())
             relaisHealthy = true;
         else
             relaisHealthy = false;
@@ -100,17 +127,12 @@ bool PowerSwitch::switchOnThreePhase() {
 }
 
 bool PowerSwitch::switchOff() {
-    Everest::Utils::sysfs_write_string(relay_1_path, "0");
-    Everest::Utils::sysfs_write_string(relay_2_path, "0");
-
-    // TODO sensing
+    disableRelay1();
+    disableRelay2();
     std::this_thread::sleep_for(std::chrono::milliseconds(relaisDelay));
-    auto relay_1_sense = Everest::Utils::sysfs_read_string(relay_1_sense_path);
-    auto relay_2_sense = Everest::Utils::sysfs_read_string(relay_2_sense_path);
 
-    // FIXME: relaisHealthy when relay_1_sense and relay_2_sense are 0 ?
     relaisOn = false;
-    if (relay_1_sense == "0" && relay_2_sense == "0")
+    if (!isActiveRelay1() && !isActiveRelay2())
         relaisHealthy = true;
     else
         relaisHealthy = false;
