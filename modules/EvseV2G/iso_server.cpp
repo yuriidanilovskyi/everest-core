@@ -411,7 +411,16 @@ static void publish_iso_pre_charge_req(struct iso1PreChargeReqType const * const
 static void publish_iso_power_delivery_req(struct iso1PowerDeliveryReqType const * const v2g_power_delivery_req) {
     //TODO: V2G values that can be published: ChargeProgress, SAScheduleTupleID, EVPowerDeliveryParameter.ChargingComplete/BulkChargingComplete,
     //                                        EVTargetCurrent, EVTargetVoltage, EVErrorCode, EVReady, EVRESSSOC
+}
 
+/*!
+ * \brief publish_iso_current_demand_req This function publishes the iso_current_demand_req message to the MQTT interface.
+ * \param v2g_current_demand_req is the request message.
+ */
+static void publish_iso_current_demand_req(struct iso1CurrentDemandReqType const * const v2g_current_demand_req, struct v2g_context *ctx) {
+    //TODO: V2G values that can be published (if used): ChargingComplete/BulkChargingComplete, EVErrorCode, EVReady, EVRESSSOC, EVMaximumCurrentLimit,
+    //                                                  EVMaximumPowerLimit, EVMaximumVoltageLimit, EVTargetCurrent, EVTargetVoltage, RemainingTimeToBulkSoC,
+    //                                                  RemainingTimeToFullSoC
 }
 
 //=============================================
@@ -1149,8 +1158,46 @@ static enum v2g_event handle_iso_pre_charge(struct v2g_connection *conn) {
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_current_demand(struct v2g_connection *conn) {
-	//TODO: implement CurrentDemand handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1CurrentDemandReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.CurrentDemandReq;
+    struct iso1CurrentDemandResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.CurrentDemandRes;
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+
+    /* At first, publish the received EV request message to the MQTT interface */
+    publish_iso_current_demand_req(req, conn->ctx);
+
+    res->DC_EVSEStatus.EVSEIsolationStatus = (iso1isolationLevelType) conn->ctx->ci_evse.evse_isolation_status;
+    res->DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->ci_evse.evse_isolation_status_is_used;
+    res->DC_EVSEStatus.EVSENotification = (iso1EVSENotificationType) conn->ctx->ci_evse.evse_notification;
+    res->DC_EVSEStatus.EVSEStatusCode = (iso1DC_EVSEStatusCodeType) conn->ctx->ci_evse.evse_status_code[PHASE_CHARGE];
+    res->DC_EVSEStatus.NotificationMaxDelay = (uint16_t) conn->ctx->ci_evse.notification_max_delay;
+    res->EVSECurrentLimitAchieved = conn->ctx->ci_evse.evse_current_limit_achieved;
+    memcpy(res->EVSEID.characters, conn->ctx->ci_evse.evse_id.bytes, conn->ctx->ci_evse.evse_id.bytesLen);
+    res->EVSEID.charactersLen = conn->ctx->ci_evse.evse_id.bytesLen;
+    res->EVSEMaximumCurrentLimit = conn->ctx->ci_evse.evse_maximum_current_limit;
+    res->EVSEMaximumCurrentLimit_isUsed = conn->ctx->ci_evse.evse_maximum_current_limit_is_used;
+    res->EVSEMaximumPowerLimit = conn->ctx->ci_evse.evse_maximum_power_limit;
+    res->EVSEMaximumPowerLimit_isUsed = conn->ctx->ci_evse.evse_maximum_power_limit_is_used;
+    res->EVSEMaximumVoltageLimit = conn->ctx->ci_evse.evse_maximum_voltage_limit;
+    res->EVSEMaximumVoltageLimit_isUsed = conn->ctx->ci_evse.evse_maximum_voltage_limit_is_used;
+    res->EVSEPowerLimitAchieved = conn->ctx->ci_evse.evse_power_limit_achieved;
+    res->EVSEPresentCurrent = conn->ctx->ci_evse.evse_present_current;
+    res->EVSEPresentVoltage = conn->ctx->ci_evse.evse_present_voltage;
+    res->EVSEVoltageLimitAchieved = conn->ctx->ci_evse.evse_voltage_limit_achieved;
+    //res->MeterInfo // TODO: PNC only
+    res->MeterInfo_isUsed = 0;
+    res->ReceiptRequired = conn->ctx->ci_evse.receipt_required;// TODO: PNC only
+    res->ReceiptRequired_isUsed = (conn->ctx->session.iso_selected_payment_option == iso1paymentOptionType_Contract)? (unsigned int) conn->ctx->ci_evse.receipt_required : (unsigned int) 0;
+    res->ResponseCode = iso1responseCodeType_OK;
+    res->SAScheduleTupleID  = conn->ctx->session.sa_schedule_tuple_id;
+
+    /* Check the current response code and check if no external error has occurred */
+    next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+    /* Set next expected req msg */
+    conn->ctx->state = ((res->ReceiptRequired_isUsed == (unsigned int) 1) && (res->ReceiptRequired == (int) 1)) ?
+            (int) iso_dc_state_id::WAIT_FOR_METERINGRECEIPT : (int) iso_dc_state_id::WAIT_FOR_CURRENTDEMAND_POWERDELIVERY; // [V2G-795], [V2G-593]
+
+    return next_event;
 }
 
 /*!
