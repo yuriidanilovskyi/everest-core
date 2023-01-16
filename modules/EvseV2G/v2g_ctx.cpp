@@ -124,7 +124,7 @@ void v2g_ctx_init_charging_state(struct v2g_context * const ctx, bool is_connect
     ctx->current_v2g_msg = V2G_UNKNOWN_MSG;
     ctx->state = 0; // WAIT_FOR_SESSIONSETUP
     ctx->selected_protocol = V2G_UNKNOWN_PROTOCOL;
-    ctx->renegotiation_required = false;
+    ctx->session.renegotiation_required = false;
 
     /* Reset timer */
     if (NULL != ctx->com_setup_timeout) {

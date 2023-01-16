@@ -245,7 +245,6 @@ struct v2g_context {
     bool intl_emergency_shutdown; /* Is set to true if an internal emergency_shutdown has occurred (send failed response, configure emergency shutdown in EVSEStatus and close tcp connection) */
     bool stop_hlc; /* is set to true if a shutdown of the charging session should be initiated (send failed response and close tcp connection) */
     bool is_connection_terminated; /* Is set to true if the connection is terminated (CP State A/F, shutdown immediately without response message) */
-    bool renegotiation_required; /* Is set to true if ev requested a renegotiation. Only for iso relevant */
 
     uint64_t received_session_id; // Is the received ev session id transmitted over the v2g header. This id shall not change during a V2G Communication Session.
 
@@ -316,6 +315,7 @@ struct v2g_context {
             mbedtls_x509_crt crt;
             mbedtls_ecdsa_context pubkey;
         } contract; // for PnC
+        bool renegotiation_required; /* Is set to true if renegotiation is required. Only relevant for ISO */
     } session;
 
     struct {

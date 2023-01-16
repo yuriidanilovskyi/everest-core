@@ -14,6 +14,7 @@
 #include <openv2g/xmldsigEXIDatatypesEncoder.h>
 #include <mbedtls/error.h>
 #include <mbedtls/sha256.h>
+#include <math.h>
 
 #include "iso_server.hpp"
 #include "log.hpp"
@@ -23,6 +24,30 @@
 
 #define MAX_EXI_SIZE 8192
 #define DIGEST_SIZE 32
+
+static const char* selected_energy_transfer_mode_string[] = {
+	"AC_single_phase_core",
+	"AC_three_phase_core",
+	"DC_core",
+	"DC_extended",
+	"DC_combo_core",
+	"DC_unique",
+};
+
+/*!
+ * \brief log_selected_energy_transfer_type This function prints the selected energy transfer mode.
+ * \param selected_energy_transfer_mode is the selected energy transfer mode
+ */
+void log_selected_energy_transfer_type(int selected_energy_transfer_mode) {
+	if (selected_energy_transfer_mode >= iso1EnergyTransferModeType_AC_single_phase_core &&
+		selected_energy_transfer_mode <= iso1EnergyTransferModeType_DC_unique) {
+		dlog(DLOG_LEVEL_INFO, "Selected energy transfer mode: %s", selected_energy_transfer_mode_string[selected_energy_transfer_mode]);
+	}
+	else {
+		dlog(DLOG_LEVEL_WARNING, "Selected energy transfer mode %d is invalid", 
+			 selected_energy_transfer_mode);
+	}
+}
 
 /*!
  * \brief iso_validate_state This function checks whether the received message is expected and valid at this
@@ -234,6 +259,17 @@ static bool check_iso1_signature(const struct iso1SignatureType* iso1_signature,
     return true;
 }
 
+/*!
+ * \brief populate_ac_evse_status This function configures the evse_status struct
+ * \param ctx is the V2G context
+ * \param evse_status is the destination struct
+ */
+static void populate_ac_evse_status(struct v2g_context *ctx, struct iso1AC_EVSEStatusType *evse_status) {
+	evse_status->EVSENotification = (iso1EVSENotificationType) ctx->ci_evse.evse_notification;
+	evse_status->NotificationMaxDelay = ctx->ci_evse.notification_max_delay;
+	evse_status->RCD = ctx->ci_evse.rcd;
+}
+
 //=============================================
 //             Publishing request msg
 //=============================================
@@ -273,6 +309,15 @@ static void publish_iso_payment_service_selection_req(struct iso1PaymentServiceS
  */
 static void publish_iso_authorization_req(struct iso1AuthorizationReqType const * const v2g_authorization_req) {
     //TODO: V2G values that can be published: Id, Id_isUsed, GenChallenge, GenChallenge_isUsed
+}
+
+/*!
+ * \brief publish_iso_charge_parameter_discovery_req This function publishes the charge_parameter_discovery_req message to the MQTT interface.
+ * \param v2g_authorization_req is the request message.
+ * \param chargeport is the topic prefix port value.
+ */
+static void publish_iso_charge_parameter_discovery_req(struct iso1ChargeParameterDiscoveryReqType const * const v2g_charge_parameter_discovery_req) {
+	    //TODO: V2G values that can be published: AC_EVChargeParameter, DC_EVChargeParameter, MaxEntriesSAScheduleTuple, RequestedEnergyTransferMode
 }
 
 //=============================================
@@ -606,8 +651,155 @@ error_out:
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connection *conn) {
-	//TODO: implement ChargeParameterDiscovery handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1ChargeParameterDiscoveryReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.ChargeParameterDiscoveryReq;
+    struct iso1ChargeParameterDiscoveryResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.ChargeParameterDiscoveryRes;
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+    struct timespec ts_abs_timeout;
+
+    /* At first, publish the received ev request message to the MQTT interface */
+    publish_iso_charge_parameter_discovery_req(req);
+
+    /* First, check requested energy transfer mode, because this information is necessary for futher configuration */
+    res->ResponseCode = iso1responseCodeType_FAILED_WrongEnergyTransferMode;
+    for(uint8_t idx = 0; idx < conn->ctx->ci_evse.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.arrayLen; idx++) {
+        if(req->RequestedEnergyTransferMode == conn->ctx->ci_evse.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array[idx]) {
+            res->ResponseCode = iso1responseCodeType_OK; // [V2G2-476]
+            log_selected_energy_transfer_type((int) req->RequestedEnergyTransferMode);
+            break;
+        }
+    }
+
+    res->EVSEChargeParameter_isUsed = 0;
+    res->EVSEProcessing = (iso1EVSEProcessingType) conn->ctx->ci_evse.evse_processing[PHASE_PARAMETER];
+
+    /* Configure SA-schedules*/
+    if (res->EVSEProcessing == iso1EVSEProcessingType_Finished) {
+        /* If processing is finished, configure SASchedule list */
+        if (conn->ctx->ci_evse.evse_sa_schedule_list_is_used == false) {
+            /* If not configured, configure SA-schedule automatically */
+            if (conn->ctx->evse_charging_type == CHARGING_TYPE_HLC_AC) {
+                /* Determin max current and nominal voltage */
+                float max_current = conn->ctx->basicConfig.evse_ac_current_limit;
+                int64_t nom_voltage = conn->ctx->ci_evse.evse_nominal_voltage.Value * pow(10, conn->ctx->ci_evse.evse_nominal_voltage.Multiplier); /* nominal voltage */
+
+                /* Calculate pmax based on max current, nominal voltage and phase count (which the car has selected above) */
+                int64_t pmax = max_current * nom_voltage * ((req->RequestedEnergyTransferMode == iso1EnergyTransferModeType_AC_single_phase_core) ? 1 : 3);
+                populate_physical_value(&conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.array[0].PMaxSchedule.PMaxScheduleEntry.array[0].PMax,
+                                        pmax, iso1unitSymbolType_W);                
+            }
+            else {
+                conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.array[0].PMaxSchedule.PMaxScheduleEntry.array[0].PMax = conn->ctx->ci_evse.evse_maximum_power_limit;
+            }
+            conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.array[0].PMaxSchedule.PMaxScheduleEntry.array[0].RelativeTimeInterval.start = 0;
+            conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.array[0].PMaxSchedule.PMaxScheduleEntry.array[0].RelativeTimeInterval.duration_isUsed = 1;
+            conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.array[0].PMaxSchedule.PMaxScheduleEntry.array[0].RelativeTimeInterval.duration = SA_SCHEDULE_DURATION;
+            conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.array[0].PMaxSchedule.PMaxScheduleEntry.arrayLen = 1;
+            conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.arrayLen = 1;
+        }
+
+        res->SAScheduleList = conn->ctx->ci_evse.evse_sa_schedule_list;
+        res->SAScheduleList_isUsed = (unsigned int) 1; //  The SECC shall only omit the parameter 'SAScheduleList' in case EVSEProcessing is set to 'Ongoing'.
+
+        if((req->MaxEntriesSAScheduleTuple_isUsed == (unsigned int) 1) && (req->MaxEntriesSAScheduleTuple < res->SAScheduleList.SAScheduleTuple.arrayLen)) {
+            dlog(DLOG_LEVEL_WARNING, "EV's max. SA-schedule-tuple entries exceeded");
+        }
+    }
+    else {
+        res->EVSEProcessing = iso1EVSEProcessingType_Ongoing;
+        res->SAScheduleList_isUsed = (unsigned int) 0;
+    }
+
+    /* Checking SAScheduleTupleID */
+    for(uint8_t idx = 0; idx < res->SAScheduleList.SAScheduleTuple.arrayLen; idx++) {
+        if (res->SAScheduleList.SAScheduleTuple.array[idx].SAScheduleTupleID == (uint8_t) 0) {
+            dlog(DLOG_LEVEL_WARNING, "Selected SAScheduleTupleID is not ISO15118 conform. The SECC shall use the values 1 to 255"); // [V2G2-773]  The SECC shall use the values 1 to 255 for the parameter SAScheduleTupleID.
+        }
+    }
+
+    res->SASchedules_isUsed = 0;
+
+	// TODO: For DC charging wait for CP state B , before transmitting of the response ([V2G2-921], [V2G2-922]). CP state is checked by other module
+
+    /* reset our internal reminder that renegotiation was requested */
+    conn->ctx->session.renegotiation_required = false; // Reset renegotiation flag
+
+    if (conn->ctx->is_dc_charger == false) {
+        /* Configure AC stucture elements */
+        res->AC_EVSEChargeParameter_isUsed = 1;
+        res->DC_EVSEChargeParameter_isUsed = 0;
+
+        populate_ac_evse_status(conn->ctx, &res->AC_EVSEChargeParameter.AC_EVSEStatus);
+
+        /* Max current */
+        float max_current = conn->ctx->basicConfig.evse_ac_current_limit;
+        populate_physical_value_float(&res->AC_EVSEChargeParameter.EVSEMaxCurrent, max_current, 1, iso1unitSymbolType_A);
+
+        /* Nominal voltage */
+        res->AC_EVSEChargeParameter.EVSENominalVoltage = conn->ctx->ci_evse.evse_nominal_voltage;
+        int64_t nom_voltage = conn->ctx->ci_evse.evse_nominal_voltage.Value * pow(10, conn->ctx->ci_evse.evse_nominal_voltage.Multiplier);
+
+        /* Calculate pmax based on max current, nominal voltage and phase count (which the car has selected above) */
+        int64_t pmax = max_current * nom_voltage * ((iso1EnergyTransferModeType_AC_single_phase_core == req->RequestedEnergyTransferMode)? 1 : 3);
+
+        /* Check the SASchedule */
+        if (res->SAScheduleList_isUsed == (unsigned int) 1) {
+            for(uint8_t idx = 0; idx < res->SAScheduleList.SAScheduleTuple.arrayLen; idx++) {
+                for(uint8_t idx2 = 0; idx2 < res->SAScheduleList.SAScheduleTuple.array[idx].PMaxSchedule.PMaxScheduleEntry.arrayLen; idx2++)
+                    if((res->SAScheduleList.SAScheduleTuple.array[idx].PMaxSchedule.PMaxScheduleEntry.array[idx2].PMax.Value * pow(10, res->SAScheduleList.SAScheduleTuple.array[idx].PMaxSchedule.PMaxScheduleEntry.array[idx2].PMax.Multiplier)) > pmax) {
+                        dlog(DLOG_LEVEL_WARNING, "Provided SA-schedule-list doesn't match with the physical value limits");
+                    }
+            }
+        }
+
+        if(req->DC_EVChargeParameter_isUsed == (unsigned int) 1) {
+            res->ResponseCode = iso1responseCodeType_FAILED_WrongChargeParameter; // [V2G2-477]
+        }
+    }
+    else {
+        /* Configure DC stucture elements */
+        res->DC_EVSEChargeParameter_isUsed = 1;
+        res->AC_EVSEChargeParameter_isUsed = 0;
+
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEIsolationStatus = (iso1isolationLevelType) conn->ctx->ci_evse.evse_isolation_status;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->ci_evse.evse_isolation_status_is_used;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSENotification  = (iso1EVSENotificationType) conn->ctx->ci_evse.evse_notification;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode = (iso1DC_EVSEStatusCodeType) conn->ctx->ci_evse.evse_status_code[PHASE_PARAMETER];
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.NotificationMaxDelay = (uint16_t) conn->ctx->ci_evse.notification_max_delay;
+
+        res->DC_EVSEChargeParameter.EVSECurrentRegulationTolerance = conn->ctx->ci_evse.evse_current_regulation_tolerance;
+        res->DC_EVSEChargeParameter.EVSECurrentRegulationTolerance_isUsed = conn->ctx->ci_evse.evse_current_regulation_tolerance_is_used;
+        res->DC_EVSEChargeParameter.EVSEEnergyToBeDelivered = conn->ctx->ci_evse.evse_energy_to_be_delivered;
+        res->DC_EVSEChargeParameter.EVSEEnergyToBeDelivered_isUsed = conn->ctx->ci_evse.evse_energy_to_be_delivered_is_used;
+        res->DC_EVSEChargeParameter.EVSEMaximumCurrentLimit = conn->ctx->ci_evse.evse_maximum_current_limit;
+        res->DC_EVSEChargeParameter.EVSEMaximumPowerLimit = conn->ctx->ci_evse.evse_maximum_power_limit;
+        res->DC_EVSEChargeParameter.EVSEMaximumVoltageLimit = conn->ctx->ci_evse.evse_maximum_voltage_limit;
+        res->DC_EVSEChargeParameter.EVSEMinimumCurrentLimit = conn->ctx->ci_evse.evse_minimum_current_limit;
+        res->DC_EVSEChargeParameter.EVSEMinimumVoltageLimit = conn->ctx->ci_evse.evse_minimum_voltage_limit;
+        res->DC_EVSEChargeParameter.EVSEPeakCurrentRipple = conn->ctx->ci_evse.evse_peak_current_ripple;
+
+        if((unsigned int) 1 == req->AC_EVChargeParameter_isUsed) {
+            res->ResponseCode = iso1responseCodeType_FAILED_WrongChargeParameter; // [V2G2-477]
+        }
+    }
+
+    /* Stop with failed response code in case fake HLC DC is configured */
+    if (conn->ctx->evse_charging_type == CHARGING_TYPE_FAKE_HLC) {
+        dlog(DLOG_LEVEL_INFO, "Configure failed response to stop fake hlc DC session");
+        res->ResponseCode = iso1responseCodeType_FAILED;
+    }
+
+    /* Check the current response code and check if no external error has occurred */
+    next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+    /* Set next expected req msg */
+    if (conn->ctx->is_dc_charger == true) {
+        conn->ctx->state = (iso1EVSEProcessingType_Finished == res->EVSEProcessing) ? (int) iso_dc_state_id::WAIT_FOR_CABLECHECK : (int) iso_dc_state_id::WAIT_FOR_CHARGEPARAMETERDISCOVERY; // [V2G-582], [V2G-688]
+    }
+    else {
+        conn->ctx->state = (iso1EVSEProcessingType_Finished == res->EVSEProcessing) ? (int) iso_ac_state_id::WAIT_FOR_POWERDELIVERY : (int) iso_ac_state_id::WAIT_FOR_CHARGEPARAMETERDISCOVERY;
+    }
+
+    return next_event;
 }
 
 /*!
