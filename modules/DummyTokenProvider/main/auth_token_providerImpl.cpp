@@ -14,7 +14,7 @@ void auth_token_providerImpl::ready() {
         if (session_event.event == types::evse_manager::SessionEventEnum::AuthRequired) {
             types::authorization::ProvidedIdToken token;
             token.id_token = this->config.token;
-            token.type = this->config.type;
+            token.type = types::authorization::string_to_token_type(this->config.type);
             this->mod->p_main->publish_provided_token(token);
         }
     });

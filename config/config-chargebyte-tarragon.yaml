@@ -85,7 +85,7 @@ active_modules:
       main:
         timeout: 10
         token: DEADBEEF
-        type: dummy
+        type: RFID
     connections:
       evse:
         - implementation_id: evse
