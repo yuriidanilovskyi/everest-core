@@ -431,6 +431,14 @@ static void publish_iso_metering_receipt_req(struct iso1MeteringReceiptReqType c
     // TODO: publish PnC only
 }
 
+/*!
+ * \brief publish_iso_welding_detection_req This function publishes the iso_welding_detection_req message to the MQTT interface.
+ * \param v2g_welding_detection_req is the request message.
+ */
+static void publish_iso_welding_detection_req(struct iso1WeldingDetectionReqType const * const v2g_welding_detection_req) {
+    //TODO: V2G values that can be published: EVErrorCode, EVReady, EVRESSSOC
+}
+
 //=============================================
 //             Request Handling
 //=============================================
@@ -1254,8 +1262,30 @@ static enum v2g_event handle_iso_current_demand(struct v2g_connection *conn) {
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_welding_detection(struct v2g_connection *conn) {
-	//TODO: implement WeldingDetection handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1WeldingDetectionReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.WeldingDetectionReq;
+    struct iso1WeldingDetectionResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.WeldingDetectionRes;
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+
+    /* At first, publish the received EV request message to the MQTT interface */
+    publish_iso_welding_detection_req(req);
+
+    // TODO: Wait for CP state B, before transmitting of the response, or signal intl_emergency_shutdown in conn->ctx ([V2G2-920], [V2G2-921]).
+
+    res->DC_EVSEStatus.EVSEIsolationStatus = (iso1isolationLevelType) conn->ctx->ci_evse.evse_isolation_status;
+    res->DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->ci_evse.evse_isolation_status_is_used;
+    res->DC_EVSEStatus.EVSENotification = (iso1EVSENotificationType) conn->ctx->ci_evse.evse_notification;
+    res->DC_EVSEStatus.EVSEStatusCode = (iso1DC_EVSEStatusCodeType) conn->ctx->ci_evse.evse_status_code[PHASE_WELDING];
+    res->DC_EVSEStatus.NotificationMaxDelay = (uint16_t) conn->ctx->ci_evse.notification_max_delay;
+    res->EVSEPresentVoltage = conn->ctx->ci_evse.evse_present_voltage;
+    res->ResponseCode = iso1responseCodeType_OK;
+
+    /* Check the current response code and check if no external error has occurred */
+    next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+    /* Set next expected req msg */
+    conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP; // [V2G-597]
+
+    return next_event;
 }
 
 /*!
