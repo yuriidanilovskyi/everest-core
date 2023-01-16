@@ -50,17 +50,15 @@ active_modules:
       connector_id: 1
       country_code: DE
       dbg_hlc_auth_after_tstep: false
-      dc_current_regulation_tolerance: 5
-      dc_peak_current_ripple: 5
       ev_receipt_required: false
       evse_id: DE*PNX*E123456*1
       has_ventilation: true
-      max_current: 32
+      max_current: 16
       payment_enable_contract: false
       payment_enable_eim: true
       rcd_enabled: true
       session_logging: false
-      session_logging_path: /tmp
+      session_logging_path: /tmp/logs
       session_logging_xml: false
       three_phases: true
     connections:
