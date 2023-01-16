@@ -316,6 +316,8 @@ struct v2g_context {
             mbedtls_ecdsa_context pubkey;
         } contract; // for PnC
         bool renegotiation_required; /* Is set to true if renegotiation is required. Only relevant for ISO */
+        bool is_charging; /* set to true if ChargeProgress is set to Start */
+        uint8_t sa_schedule_tuple_id; /* selected SA schedule tuple ID*/
     } session;
 
     struct {

@@ -270,6 +270,74 @@ static void populate_ac_evse_status(struct v2g_context *ctx, struct iso1AC_EVSES
 	evse_status->RCD = ctx->ci_evse.rcd;
 }
 
+/*!
+ * \brief check_iso1_charging_profile_values This function checks if EV charging profile values are within permissible ranges
+ * \param req is the PowerDeliveryReq
+ * \param res is the PowerDeliveryRes
+ * \param conn holds the structure with the V2G msg pair
+ * \param sa_schedule_tuple_idx is the index of SA schedule tuple
+ */
+static void check_iso1_charging_profile_values(iso1PowerDeliveryReqType *req, iso1PowerDeliveryResType *res, v2g_connection *conn, uint8_t sa_schedule_tuple_idx) {
+    if (req->ChargingProfile_isUsed == (unsigned int) 1) {
+
+        const struct iso1PMaxScheduleType * evse_p_max_schedule = &conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.array[sa_schedule_tuple_idx].PMaxSchedule;
+
+        uint32_t ev_time_sum = 0; // Summed EV relative time interval
+        uint32_t evse_time_sum = 0; // Summed EVSE relative time interval
+        uint8_t evse_idx = 0; // Actual PMaxScheduleEntry index
+        bool ev_time_is_within_profile_entry = false; // Is true if the summed EV relative time interval is within the actual EVSE time interval */
+
+        /* Check if the EV ChargingProfileEntryStart time and PMax value fits with the provided EVSE PMaxScheduleEntry list. [V2G2-293] */
+        for (uint8_t ev_idx = 0; ev_idx < req->ChargingProfile.ProfileEntry.arrayLen && (res->ResponseCode == iso1responseCodeType_OK); ev_idx++) {
+
+            ev_time_sum += req->ChargingProfile.ProfileEntry.array[ev_idx].ChargingProfileEntryStart;
+
+            while (evse_idx < evse_p_max_schedule->PMaxScheduleEntry.arrayLen && (ev_time_is_within_profile_entry == false)) {
+
+                /* Check if EV ChargingProfileEntryStart value is within one EVSE schedule entry.
+                 * The last element must be checked separately, because of the duration value */
+
+                /* If we found an entry which fits in the EVSE time schedule, check if the next EV time slot fits as well
+                 * Otherwise check if the next time interval fits in the EVSE time schedule */
+                evse_time_sum += evse_p_max_schedule->PMaxScheduleEntry.array[evse_idx].RelativeTimeInterval.start;
+
+                /* Check the time intervals, in the last schedule element the duration value must be considered */
+                if (evse_idx < (evse_p_max_schedule->PMaxScheduleEntry.arrayLen - 1)) {
+                    ev_time_is_within_profile_entry = (ev_time_sum >= evse_time_sum) &&
+                                                      (ev_time_sum < (evse_time_sum + evse_p_max_schedule->PMaxScheduleEntry.array[evse_idx+1].RelativeTimeInterval.start));
+                }
+                else {
+                    ev_time_is_within_profile_entry = (ev_time_sum >= evse_time_sum) &&
+                                                      (ev_time_sum <= (evse_time_sum + evse_p_max_schedule->PMaxScheduleEntry.array[evse_idx].RelativeTimeInterval.duration_isUsed *
+                                                                       evse_p_max_schedule->PMaxScheduleEntry.array[evse_idx].RelativeTimeInterval.duration));
+                }
+
+                if (ev_time_is_within_profile_entry == true) {
+                    /* Check if ev ChargingProfileEntryMaxPower element is equal to or smaller than the limits in respective elements of the PMaxScheduleType */
+                    if((req->ChargingProfile.ProfileEntry.array[ev_idx].ChargingProfileEntryMaxPower.Value *
+                        pow(10, req->ChargingProfile.ProfileEntry.array[ev_idx].ChargingProfileEntryMaxPower.Multiplier)) >
+                            (evse_p_max_schedule->PMaxScheduleEntry.array[evse_idx].PMax.Value * pow(10, evse_p_max_schedule->PMaxScheduleEntry.array[evse_idx].PMax.Multiplier))) {
+                        //res->ResponseCode = iso1responseCodeType_FAILED_ChargingProfileInvalid; // [V2G2-224] [V2G2-225] [V2G2-478]
+                        // setting response code is commented because some EVs do not support schedules correctly
+                        dlog(DLOG_LEVEL_WARNING, "EV's charging profile is invalid (ChargingProfileEntryMaxPower too high)!");
+                        break;
+                    }
+                }
+                /* If the last EVSE element is reached and ChargingProfileEntryStart time doesn't fit */
+                else if (evse_idx == (evse_p_max_schedule->PMaxScheduleEntry.arrayLen - 1)) {
+                    //res->ResponseCode = iso1responseCodeType_FAILED_ChargingProfileInvalid; // EV charing profile time exceeds EVSE provided schedule
+                    // setting response code is commented because some EVs do not support schedules correctly
+                    dlog(DLOG_LEVEL_WARNING, "EV's charging profile is invalid (EV charging profile time exceeds provided schedule)!");
+                }
+                else {
+                    /* Now we checked if the current EV interval fits within the EVSE interval, but it fails.
+                     * Next step is to check the EVSE interval until we reached the last EVSE interval */
+                    evse_idx = (ev_time_is_within_profile_entry == false) ? (evse_idx + 1) : evse_idx;
+                }
+            }
+        }
+    }
+}
 //=============================================
 //             Publishing request msg
 //=============================================
@@ -334,6 +402,16 @@ static void publish_iso_cable_check_req(struct iso1CableCheckReqType const * con
  */
 static void publish_iso_pre_charge_req(struct iso1PreChargeReqType const * const v2g_precharge_req) {
     //TODO: V2G values that can be published: EVErrorCode, EVReady, EVRESSSOC, EVTargetCurrent, EVTargetVoltage
+}
+
+/*!
+ * \brief publish_iso_power_delivery_req This function publishes the iso_power_delivery_req message to the MQTT interface.
+ * \param v2g_power_delivery_req is the request message.
+ */
+static void publish_iso_power_delivery_req(struct iso1PowerDeliveryReqType const * const v2g_power_delivery_req) {
+    //TODO: V2G values that can be published: ChargeProgress, SAScheduleTupleID, EVPowerDeliveryParameter.ChargingComplete/BulkChargingComplete,
+    //                                        EVTargetCurrent, EVTargetVoltage, EVErrorCode, EVReady, EVRESSSOC
+
 }
 
 //=============================================
@@ -825,8 +903,133 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_power_delivery(struct v2g_connection *conn) {
-	//TODO: implement PowerDelivery handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1PowerDeliveryReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.PowerDeliveryReq;
+    struct iso1PowerDeliveryResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.PowerDeliveryRes;
+    struct timespec ts_abs_timeout;
+    uint8_t sa_schedule_tuple_idx = 0;
+    bool entry_found = false;
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+
+    /* At first, publish the received EV request message to the MQTT interface */
+    publish_iso_power_delivery_req(req);
+
+    /* build up response */
+    res->ResponseCode = iso1responseCodeType_OK;
+
+    switch (req->ChargeProgress) {
+        case iso1chargeProgressType_Start:
+
+            conn->ctx->session.is_charging = true;
+
+            if (conn->ctx->is_dc_charger == false) {
+
+                // TODO: For AC charging wait for CP state C or D , before transmitting of the response. CP state is checked by other module
+
+                // TODO: Signal closing contactor with MQTT if no timeout while waiting for state C or D
+
+                // TODO: Set response to iso1responseCodeType_FAILED_ContactorError if contactor failed to close within time
+            }
+
+            break;
+
+        case iso1chargeProgressType_Stop:
+
+            if (conn->ctx->is_dc_charger == false) {
+
+                // TODO: For AC charging wait for CP state change from C/D to B , before transmitting of the response. CP state is checked by other module
+
+                conn->ctx->session.is_charging = false;
+            }
+
+            // TODO: Signal opening contactor with MQTT
+
+            break;
+
+        case iso1chargeProgressType_Renegotiate:
+
+            res->ResponseCode = (conn->ctx->session.is_charging == false) ? iso1responseCodeType_FAILED : res->ResponseCode; // [V2G2-812]
+            conn->ctx->session.renegotiation_required = true;
+            break;
+
+        default:
+            dlog(DLOG_LEVEL_ERROR, "Unknown ChargeProgress %d received, signaling error", req->ChargeProgress);
+            res->ResponseCode = iso1responseCodeType_FAILED;
+    }
+
+    if (conn->ctx->is_dc_charger == false) {
+        res->AC_EVSEStatus_isUsed = 1;
+        res->DC_EVSEStatus_isUsed = 0;
+        populate_ac_evse_status(conn->ctx, &res->AC_EVSEStatus);
+    }
+    else {
+        res->DC_EVSEStatus_isUsed = 1;
+        res->AC_EVSEStatus_isUsed = 0;
+        res->DC_EVSEStatus.EVSEIsolationStatus = (iso1isolationLevelType) conn->ctx->ci_evse.evse_isolation_status;
+        res->DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->ci_evse.evse_isolation_status_is_used;
+        res->DC_EVSEStatus.EVSENotification = (iso1EVSENotificationType) conn->ctx->ci_evse.evse_notification;
+        res->DC_EVSEStatus.EVSEStatusCode = (iso1DC_EVSEStatusCodeType) conn->ctx->ci_evse.evse_status_code[PHASE_CHARGE];
+        res->DC_EVSEStatus.NotificationMaxDelay = (uint16_t) conn->ctx->ci_evse.notification_max_delay;
+
+        res->ResponseCode = (req->ChargeProgress == iso1chargeProgressType_Start) && (res->DC_EVSEStatus.EVSEStatusCode != iso1DC_EVSEStatusCodeType_EVSE_Ready)?
+                                iso1responseCodeType_FAILED_PowerDeliveryNotApplied : res->ResponseCode; // [V2G2-480]
+    }
+
+    res->EVSEStatus_isUsed = 0;
+
+    /* Check the selected SAScheduleTupleID */
+    for(sa_schedule_tuple_idx = 0; sa_schedule_tuple_idx < conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.arrayLen; sa_schedule_tuple_idx++) {
+        if((conn->ctx->ci_evse.evse_sa_schedule_list.SAScheduleTuple.array[sa_schedule_tuple_idx].SAScheduleTupleID == req->SAScheduleTupleID)) {
+            entry_found = true;
+            conn->ctx->session.sa_schedule_tuple_id = req->SAScheduleTupleID;
+            break;
+        }
+    }
+
+    res->ResponseCode = (entry_found == false)? iso1responseCodeType_FAILED_TariffSelectionInvalid : res->ResponseCode; // [V2G2-479]
+
+    /* Check EV charging profile values [V2G2-478] */
+    check_iso1_charging_profile_values(req, res, conn, sa_schedule_tuple_idx);
+
+    /* Check the current response code and check if no external error has occurred */
+    next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+    /* Set next expected req msg */
+    if ((req->ChargeProgress == iso1chargeProgressType_Renegotiate) &&
+            ((conn->ctx->last_v2g_msg == V2G_CURRENT_DEMAND_MSG) ||
+             (conn->ctx->last_v2g_msg == V2G_CHARGING_STATUS_MSG))) {
+        conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_CHARGEPARAMETERDISCOVERY; // [V2G-813]
+
+        if (conn->ctx->evse_charging_type == CHARGING_TYPE_HLC_AC) {
+            // Intended for AC only
+            conn->ctx->ci_evse.evse_notification = (conn->ctx->ci_evse.evse_notification == iso1EVSENotificationType_ReNegotiation) ?
+                    iso1EVSENotificationType_None : conn->ctx->ci_evse.evse_notification;
+        }
+        else {
+            // Reset parameter to start the renegotation process
+            conn->ctx->ci_evse.evse_processing[PHASE_PARAMETER] = iso1EVSEProcessingType_Ongoing;
+            conn->ctx->ci_evse.evse_processing[PHASE_ISOLATION] = iso1EVSEProcessingType_Ongoing;
+            conn->ctx->ci_evse.evse_status_code[PHASE_PARAMETER] = iso1DC_EVSEStatusCodeType_EVSE_NotReady;
+            conn->ctx->ci_evse.evse_status_code[PHASE_ISOLATION] = iso1DC_EVSEStatusCodeType_EVSE_NotReady;
+            conn->ctx->ci_evse.evse_status_code[PHASE_PRECHARGE] = iso1DC_EVSEStatusCodeType_EVSE_NotReady;
+            conn->ctx->ci_evse.evse_status_code[PHASE_CHARGE] = iso1DC_EVSEStatusCodeType_EVSE_NotReady;
+            conn->ctx->ci_evse.evse_notification = (iso1EVSENotificationType_ReNegotiation == conn->ctx->ci_evse.evse_notification) ?
+                    iso1EVSENotificationType_None : conn->ctx->ci_evse.evse_notification;
+            conn->ctx->ci_evse.evse_isolation_status = iso1isolationLevelType_Invalid;
+        }
+    }
+    else if ((req->ChargeProgress == iso1chargeProgressType_Start) && (conn->ctx->last_v2g_msg != V2G_CURRENT_DEMAND_MSG) && (conn->ctx->last_v2g_msg != V2G_CHARGING_STATUS_MSG)) {
+        conn->ctx->state = (conn->ctx->is_dc_charger == true) ? (int) iso_dc_state_id::WAIT_FOR_CURRENTDEMAND : (int) iso_ac_state_id::WAIT_FOR_CHARGINGSTATUS; // [V2G-590], [V2G2-576]
+    }
+    else {
+        /* abort charging session if EV is ready to charge after current demand phase */
+        if (req->ChargeProgress == iso1chargeProgressType_Start) {
+            res->ResponseCode = iso1responseCodeType_FAILED;
+            next_event = V2G_EVENT_SEND_AND_TERMINATE;
+        }
+        conn->ctx->state = (conn->ctx->is_dc_charger == true) ? (int) iso_dc_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP : (int) iso_ac_state_id::WAIT_FOR_SESSIONSTOP; // [V2G-601], [V2G2-568]
+    }
+
+    return next_event;
 }
 
 /*!
