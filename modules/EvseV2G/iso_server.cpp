@@ -320,6 +320,14 @@ static void publish_iso_charge_parameter_discovery_req(struct iso1ChargeParamete
 	    //TODO: V2G values that can be published: AC_EVChargeParameter, DC_EVChargeParameter, MaxEntriesSAScheduleTuple, RequestedEnergyTransferMode
 }
 
+/*!
+ * \brief publish_iso_cable_check_req This function publishes the iso_cable_check_req message to the MQTT interface.
+ * \param v2g_cable_check_req is the request message.
+ */
+static void publish_iso_cable_check_req(struct iso1CableCheckReqType const * const v2g_cable_check_req) {
+    //TODO: V2G values that can be published: EVErrorCode, EVReady, EVRESSSOC
+}
+
 //=============================================
 //             Request Handling
 //=============================================
@@ -864,8 +872,31 @@ static enum v2g_event handle_iso_certificate_installation(struct v2g_connection 
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_cable_check(struct v2g_connection *conn) {
-	//TODO: implement CableCheck handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1CableCheckReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.CableCheckReq;
+    struct iso1CableCheckResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.CableCheckRes;
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+
+    /* At first, publish the received EV request message to the MQTT interface */
+    publish_iso_cable_check_req(req);
+
+    // TODO: For DC charging wait for CP state C or D , before transmitting of the response ([V2G2-917], [V2G2-918]). CP state is checked by other module
+
+    /* Fill the CableCheckRes */
+    res->ResponseCode = iso1responseCodeType_OK;
+    res->DC_EVSEStatus.EVSEIsolationStatus = (iso1isolationLevelType) conn->ctx->ci_evse.evse_isolation_status;
+    res->DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->ci_evse.evse_isolation_status_is_used;
+    res->DC_EVSEStatus.EVSENotification = (iso1EVSENotificationType) conn->ctx->ci_evse.evse_notification;
+    res->DC_EVSEStatus.EVSEStatusCode = (iso1DC_EVSEStatusCodeType) conn->ctx->ci_evse.evse_status_code[PHASE_ISOLATION];
+    res->DC_EVSEStatus.NotificationMaxDelay = (uint16_t) conn->ctx->ci_evse.notification_max_delay;
+    res->EVSEProcessing = (iso1EVSEProcessingType) conn->ctx->ci_evse.evse_processing[PHASE_ISOLATION];
+
+    /* Check the current response code and check if no external error has occurred */
+    next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+    /* Set next expected req msg */
+    conn->ctx->state = (res->EVSEProcessing == iso1EVSEProcessingType_Finished) ? (int) iso_dc_state_id::WAIT_FOR_PRECHARGE : (int) iso_dc_state_id::WAIT_FOR_CABLECHECK; // [V2G-584], [V2G-621]
+
+    return next_event;
 }
 
 /*!
