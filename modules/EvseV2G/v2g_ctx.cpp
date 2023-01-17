@@ -238,13 +238,15 @@ void v2g_ctx_init_charging_values(struct v2g_context * const ctx) {
     initialize_once = true;
 }
 
-struct v2g_context *v2g_ctx_create()
+struct v2g_context *v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase)
 {
     struct v2g_context *ctx;
 
     ctx = (v2g_context*) calloc(1, sizeof(*ctx));
     if (!ctx)
         return NULL;
+
+    ctx->p_charger = p_chargerImplBase;
 
     ctx->tls_security = TLS_SECURITY_PROHIBIT; // default
 

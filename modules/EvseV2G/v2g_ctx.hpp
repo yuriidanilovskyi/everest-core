@@ -12,7 +12,7 @@
 #define PHY_VALUE_VALUE_MIN SHRT_MIN
 #define PHY_VALUE_VALUE_MAX SHRT_MAX
 
-struct v2g_context *v2g_ctx_create();
+struct v2g_context *v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase);
 
 /*!
  * \brief v2g_ctx_init_charging_session This funcion inits a charging session.
