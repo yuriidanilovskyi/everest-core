@@ -1073,8 +1073,41 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection *conn) {
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_charging_status(struct v2g_connection *conn) {
-	//TODO: implement ChargingStatus handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1ChargingStatusReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.ChargingStatusReq;
+    struct iso1ChargingStatusResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.ChargingStatusRes;
+    enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+    /* build up response */
+    res->ResponseCode = iso1responseCodeType_OK;
+
+    res->ReceiptRequired = conn->ctx->ci_evse.receipt_required;
+    res->ReceiptRequired_isUsed = (conn->ctx->session.iso_selected_payment_option == iso1paymentOptionType_Contract)? 1U : 0U; // Is optional, but verisco tester checks this parameter in PnC
+
+    res->MeterInfo_isUsed = 0; // TODO: Configure MeterInfo
+
+    res->EVSEMaxCurrent_isUsed = (conn->ctx->session.iso_selected_payment_option == iso1paymentOptionType_Contract)? (unsigned int) 0 : (unsigned int) 1; // This element is not included in the message if any AC PnC Message Set has been selected.
+
+    if ((unsigned int) 1 == res->EVSEMaxCurrent_isUsed) {
+        populate_physical_value_float(&res->EVSEMaxCurrent , conn->ctx->basicConfig.evse_ac_current_limit, 1, iso1unitSymbolType_A);
+    }
+
+    conn->exi_out.iso1EXIDocument->V2G_Message.Body.ChargingStatusRes_isUsed = 1;
+
+    /* the following field can also be set in error path */
+    res->EVSEID.charactersLen = conn->ctx->ci_evse.evse_id.bytesLen;
+    memcpy(res->EVSEID.characters, conn->ctx->ci_evse.evse_id.bytes, conn->ctx->ci_evse.evse_id.bytesLen);
+
+    /* in error path the session might not be available */
+    res->SAScheduleTupleID = conn->ctx->session.sa_schedule_tuple_id;
+    populate_ac_evse_status(conn->ctx, &res->AC_EVSEStatus);
+
+    /* Check the current response code and check if no external error has occurred */
+    next_event = (enum v2g_event ) iso_validate_response_code(&res->ResponseCode, conn);
+
+    /* Set next expected req msg */
+    conn->ctx->state = (((int) 1 == res->ReceiptRequired)) ? (int) iso_ac_state_id::WAIT_FOR_METERINGRECEIPT : 
+                                                             (int) iso_ac_state_id::WAIT_FOR_CHARGINGSTATUS_POWERDELIVERY; // [V2G2-577], [V2G2-575]
+
+    return next_event;
 }
 
 /*!
