@@ -238,7 +238,12 @@ void ISO15118_chargerImpl::handle_set_EVSE_Malfunction(bool& EVSE_Malfunction){
 };
 
 void ISO15118_chargerImpl::handle_set_EVSE_EmergencyShutdown(bool& EVSE_EmergencyShutdown){
+    /* signal changes to possible waiters, according to man page, it never returns an error code */
+    pthread_mutex_lock(&v2g_ctx->mqtt_lock);
     v2g_ctx->intl_emergency_shutdown = EVSE_EmergencyShutdown;
+    pthread_cond_signal(&v2g_ctx->mqtt_cond);
+    /* unlock */
+    pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
 };
 
 void ISO15118_chargerImpl::handle_set_MeterInfo(types::powermeter::Powermeter& powermeter){
@@ -246,7 +251,12 @@ void ISO15118_chargerImpl::handle_set_MeterInfo(types::powermeter::Powermeter& p
 };
 
 void ISO15118_chargerImpl::handle_contactor_closed(bool& status){
+    /* signal changes to possible waiters, according to man page, it never returns an error code */
+    pthread_mutex_lock(&v2g_ctx->mqtt_lock);
     v2g_ctx->ci_evse.contactor_is_closed = status;
+    pthread_cond_signal(&v2g_ctx->mqtt_cond);
+    /* unlock */
+    pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
 };
 
 void ISO15118_chargerImpl::handle_contactor_open(bool& status){
