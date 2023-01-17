@@ -363,6 +363,15 @@ static void publish_iso_service_discovery_req(struct iso1ServiceDiscoveryReqType
 }
 
 /*!
+ * \brief publish_iso_service_detail_req This function publishes the iso_service_detail_req message to the MQTT interface.
+ * \param v2g_service_detail_req is the request message.
+ * \param chargeport is the topic prefix port value.
+ */
+static void publish_iso_service_detail_req(struct iso1ServiceDetailReqType const * const v2g_service_detail_req, int chargeport) {
+	//TODO: V2G values that can be published: ServiceID
+}
+
+/*!
  * \brief publish_iso_payment_service_selection_req This function publishes the iso_payment_service_selection_req message to the MQTT interface.
  * \param v2g_payment_service_selection_req is the request message.
  * \param chargeport is the topic prefix port value.
@@ -607,8 +616,46 @@ static enum v2g_event handle_iso_service_discovery(struct v2g_connection *conn) 
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_service_detail(struct v2g_connection *conn) {
-	//TODO: implement ServiceDetail handling
-	return V2G_EVENT_NO_EVENT;
+	struct iso1ServiceDetailReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.ServiceDetailReq;
+	struct iso1ServiceDetailResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.ServiceDetailRes;
+	enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+
+	/* At first, publish the received ev request message to the MQTT interface */
+	publish_iso_service_detail_req(req, conn->ctx->chargeport);
+
+	res->ResponseCode = iso1responseCodeType_OK;
+
+	/* ServiceID reported back always matches the requested one */
+	res->ServiceID = req->ServiceID;
+
+	bool service_id_found = false;
+
+	for(uint8_t idx = 0; idx < conn->ctx->ci_evse.evse_service_list_len; idx++) {
+
+		if (req->ServiceID == conn->ctx->ci_evse.evse_service_list[idx].ServiceID) {
+			service_id_found = true;
+
+			/* Fill parameter list of the requested service id [V2G2-549] */
+			for (uint8_t idx2 = 0; idx2 < conn->ctx->ci_evse.service_parameter_list[idx].ParameterSet.arrayLen; idx2++) {
+				res->ServiceParameterList.ParameterSet.array[idx2] = conn->ctx->ci_evse.service_parameter_list[idx].ParameterSet.array[idx2];
+			}
+			res->ServiceParameterList.ParameterSet.arrayLen = conn->ctx->ci_evse.service_parameter_list[idx].ParameterSet.arrayLen;
+			res->ServiceParameterList_isUsed = (res->ServiceParameterList.ParameterSet.arrayLen != 0)? 1 : 0;
+		}
+	}
+	service_id_found = (req->ServiceID == V2G_SERVICE_ID_CHARGING)? true : service_id_found;
+
+	if (false == service_id_found) {
+		res->ResponseCode = iso1responseCodeType_FAILED_ServiceIDInvalid; // [V2G2-464]
+	}
+
+	/* Check the current response code and check if no external error has occurred */
+	next_event = (v2g_event) iso_validate_response_code(&res->ResponseCode, conn);
+
+	/* Set next expected req msg */
+	conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_SVCDETAIL_PAYMENTSVCSEL; // [V2G-DC-548]
+
+	return next_event;
 }
 
 /*!
