@@ -245,7 +245,7 @@ struct v2g_context {
     bool use_relaxed_timings; /* Is set to true if timings shall not be strict */
     int8_t supported_protocols; /* Is an bit mask and holds the supported app protocols. See v2g_protocol enum */
     enum v2g_protocol selected_protocol; /* Holds the selected protocole after supported app protocol */
-    bool intl_emergency_shutdown; /* Is set to true if an internal emergency_shutdown has occurred (send failed response, configure emergency shutdown in EVSEStatus and close tcp connection) */
+    std::atomic<bool> intl_emergency_shutdown; /* Is set to true if an internal emergency_shutdown has occurred (send failed response, configure emergency shutdown in EVSEStatus and close tcp connection) */
     bool stop_hlc; /* is set to true if a shutdown of the charging session should be initiated (send failed response and close tcp connection) */
     bool is_connection_terminated; /* Is set to true if the connection is terminated (CP State A/F, shutdown immediately without response message) */
 
@@ -283,7 +283,7 @@ struct v2g_context {
         // AC parameter
         int rcd;
         int receipt_required;
-        bool contactor_is_closed; /* Actual contactor state */
+        std::atomic<bool> contactor_is_closed; /* Actual contactor state */
 
         // evse power electronic values
         struct iso1PhysicalValueType evse_current_regulation_tolerance;
