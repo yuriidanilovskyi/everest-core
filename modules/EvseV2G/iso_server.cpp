@@ -439,6 +439,15 @@ static void publish_iso_welding_detection_req(struct iso1WeldingDetectionReqType
     //TODO: V2G values that can be published: EVErrorCode, EVReady, EVRESSSOC
 }
 
+/*!
+ * \brief publish_iso_session_stop_req This function publishes the iso_session_stop_req message to the MQTT interface.
+ * \param v2g_session_stop_req is the request message.
+ * \param chargeport is the topic prefix port value.
+ */
+static void publish_iso_session_stop_req(struct iso1SessionStopReqType const * const v2g_session_stop_req, int chargeport) {
+    //TODO: V2G values that can be published: ChargingSession
+}
+
 //=============================================
 //             Request Handling
 //=============================================
@@ -1296,8 +1305,47 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection *conn) 
  * \return Returns the next v2g-event.
  */
 static enum v2g_event handle_iso_session_stop(struct v2g_connection *conn) {
-	//TODO: implement SessionStop handling
-	return V2G_EVENT_NO_EVENT;
+    struct iso1SessionStopReqType *req = &conn->exi_in.iso1EXIDocument->V2G_Message.Body.SessionStopReq;
+    struct iso1SessionStopResType *res = &conn->exi_out.iso1EXIDocument->V2G_Message.Body.SessionStopRes;
+
+    /* At first, publish the received ev request message to the MQTT interface */
+    publish_iso_session_stop_req(req, conn->ctx->chargeport);
+
+    res->ResponseCode = iso1responseCodeType_OK;
+
+    /* Check the current response code and check if no external error has occurred */
+    iso_validate_response_code(&res->ResponseCode, conn);
+
+     /* Set the next charging state */
+    switch (req->ChargingSession) {
+        case iso1chargingSessionType_Terminate:
+            conn->dlink_action = MQTT_DLINK_ACTION_TERMINATE;
+            /* Set next expected req msg */
+            conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_TERMINATED_SESSION;
+            break;
+
+        case iso1chargingSessionType_Pause:
+            /* Set next expected req msg */
+            /* Check if the EV is allowed to request the sleep mode. TODO: Remove "true" if sleep mode is supported */
+            if (true || ((conn->ctx->last_v2g_msg != V2G_POWER_DELIVERY_MSG) && (conn->ctx->last_v2g_msg != V2G_WELDING_DETECTION_MSG))) {
+                conn->dlink_action = MQTT_DLINK_ACTION_TERMINATE;
+                res->ResponseCode = iso1responseCodeType_FAILED;
+                conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_TERMINATED_SESSION;
+            }
+            else {
+                /* Init sleep mode for the EV */
+                conn->dlink_action = MQTT_DLINK_ACTION_PAUSE;
+                conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_SESSIONSETUP;
+            }
+            break;
+
+        default:
+            /* Set next expected req msg */
+            conn->dlink_action = MQTT_DLINK_ACTION_TERMINATE;
+            conn->ctx->state = (int) iso_dc_state_id::WAIT_FOR_TERMINATED_SESSION;
+    }
+
+    return V2G_EVENT_SEND_AND_TERMINATE; // Charging must be terminated after sending the response message [V2G2-571]
 }
 
 enum v2g_event iso_handle_request(v2g_connection *conn) {
