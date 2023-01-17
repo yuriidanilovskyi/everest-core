@@ -349,11 +349,19 @@ ssize_t connection_write(struct v2g_connection *conn, unsigned char *buf, size_t
 }
 
 static void connection_teardown(struct v2g_connection *conn) {
+    if (conn->ctx->session.is_charging == true) {
+        conn->ctx->p_charger->publish_currentDemand_Finished(boost::blank{});
+
+        if (conn->ctx->is_dc_charger == true) {
+            conn->ctx->p_charger->publish_DC_Open_Contactor(true);
+        }
+        else {
+            conn->ctx->p_charger->publish_AC_Open_Contactor(true);
+        }
+    }
+	
 	/* init charging state */
 	v2g_ctx_init_charging_state(conn->ctx, true);
-
-	/* open contactor */
-	// TODO: Publish DC/AC target contactor state
 
 	/* stop timer */
 	stop_timer(&conn->ctx->com_setup_timeout, NULL, conn->ctx);

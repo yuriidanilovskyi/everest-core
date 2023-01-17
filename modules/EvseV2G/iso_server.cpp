@@ -343,17 +343,6 @@ static void check_iso1_charging_profile_values(iso1PowerDeliveryReqType *req, is
 //=============================================
 
 /*!
- * \brief publish_iso_session_setup_req This function publishes the iso_session_setup_req message to the MQTT interface.
- * \param v2g_session_setup_req is the request message.
- * \param chargeport is the topic prefix port value.
- */
-static void publish_iso_session_setup_req(struct iso1SessionSetupReqType const * const v2g_session_setup_req, int chargeport) {
-	uint64_t evccid = 0;
-	memcpy(&evccid, v2g_session_setup_req->EVCCID.bytes, min(v2g_session_setup_req->EVCCID.bytesLen, iso1SessionSetupReqType_EVCCID_BYTES_SIZE));
-	//TODO: publish evccid to EVCCIDD
-}
-
-/*!
  * \brief publish_iso_service_discovery_req This function publishes the iso_service_discovery_req message to the MQTT interface.
  * \param iso1ServiceDiscoveryReqType is the request message.
  * \param chargeport is the topic prefix port value.
@@ -390,11 +379,12 @@ static void publish_iso_authorization_req(struct iso1AuthorizationReqType const 
 
 /*!
  * \brief publish_iso_charge_parameter_discovery_req This function publishes the charge_parameter_discovery_req message to the MQTT interface.
- * \param v2g_authorization_req is the request message.
- * \param chargeport is the topic prefix port value.
+ * \param p_charger to publish MQTT topics.
+ * \param v2g_charge_parameter_discovery_req is the request message.
  */
-static void publish_iso_charge_parameter_discovery_req(struct iso1ChargeParameterDiscoveryReqType const * const v2g_charge_parameter_discovery_req) {
-	    //TODO: V2G values that can be published: AC_EVChargeParameter, DC_EVChargeParameter, MaxEntriesSAScheduleTuple, RequestedEnergyTransferMode
+static void publish_iso_charge_parameter_discovery_req(ISO15118_chargerImplBase* p_charger, struct iso1ChargeParameterDiscoveryReqType const * const v2g_charge_parameter_discovery_req) {
+	    //TODO: V2G values that can be published: AC_EVChargeParameter, DC_EVChargeParameter, MaxEntriesSAScheduleTuple
+        p_charger->publish_RequestedEnergyTransferMode(static_cast<types::iso15118_charger::EnergyTransferMode>(v2g_charge_parameter_discovery_req->RequestedEnergyTransferMode));
 }
 
 /*!
@@ -473,9 +463,6 @@ static enum v2g_event handle_iso_session_setup(struct v2g_connection *conn) {
 	int i;
 	enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
-	/* At first, publish the received EV request message to the customer MQTT interface */
-	publish_iso_session_setup_req(req, conn->ctx->chargeport);
-
 	/* format EVCC ID */
 	for (i = 0; i < req->EVCCID.bytesLen; i++) {
 		sprintf(&buffer[i * 3], "%02" PRIx8 ":", req->EVCCID.bytes[i]);
@@ -484,6 +471,8 @@ static enum v2g_event handle_iso_session_setup(struct v2g_connection *conn) {
 		buffer[i * 3 - 1] = '\0';
 	else
 		buffer[0] = '\0';
+
+    conn->ctx->p_charger->publish_EVCCIDD(buffer); // publish EVCC ID
 
 	dlog(DLOG_LEVEL_INFO, "SessionSetupReq.EVCCID: %s", strlen(buffer) ? buffer : "(zero length provided)");
 
@@ -683,6 +672,7 @@ static enum v2g_event handle_iso_payment_service_selection(struct v2g_connection
     for(idx = 0; idx < conn->ctx->ci_evse.payment_option_list_len; idx++) {
         if((conn->ctx->ci_evse.payment_option_list[idx] == req->SelectedPaymentOption)) {
             list_element_found = true;
+            conn->ctx->p_charger->publish_SelectedPaymentOption(static_cast<types::iso15118_charger::PaymentOption>(req->SelectedPaymentOption));
             break;
         }
     }
@@ -832,7 +822,7 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
     struct timespec ts_abs_timeout;
 
     /* At first, publish the received ev request message to the MQTT interface */
-    publish_iso_charge_parameter_discovery_req(req);
+    publish_iso_charge_parameter_discovery_req(conn->ctx->p_charger, req);
 
     /* First, check requested energy transfer mode, because this information is necessary for futher configuration */
     res->ResponseCode = iso1responseCodeType_FAILED_WrongEnergyTransferMode;
@@ -999,14 +989,15 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection *conn) {
 
     switch (req->ChargeProgress) {
         case iso1chargeProgressType_Start:
-
-            conn->ctx->session.is_charging = true;
+            conn->ctx->p_charger->publish_V2G_Setup_Finished(boost::blank{});
 
             if (conn->ctx->is_dc_charger == false) {
                 int rv = 0;
                 // TODO: For AC charging wait for CP state C or D , before transmitting of the response. CP state is checked by other module
                 if (conn->ctx->ci_evse.contactor_is_closed == false) {
                     // TODO: Signal closing contactor with MQTT if no timeout while waiting for state C or D
+                    conn->ctx->p_charger->publish_AC_Close_Contactor(true);
+                    conn->ctx->session.is_charging = true;
 
                     /* determine timeout for contactor */
                     clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
@@ -1031,20 +1022,19 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection *conn) {
                     }
                 }
             }
-
             break;
 
         case iso1chargeProgressType_Stop:
+            conn->ctx->session.is_charging = false;
 
             if (conn->ctx->is_dc_charger == false) {
-
                 // TODO: For AC charging wait for CP state change from C/D to B , before transmitting of the response. CP state is checked by other module
-
-                conn->ctx->session.is_charging = false;
+                conn->ctx->p_charger->publish_AC_Open_Contactor(true);
             }
-
-            // TODO: Signal opening contactor with MQTT
-
+            else {
+                conn->ctx->p_charger->publish_currentDemand_Finished(boost::blank{});
+                conn->ctx->p_charger->publish_DC_Open_Contactor(true);
+            }
             break;
 
         case iso1chargeProgressType_Renegotiate:
@@ -1478,6 +1468,10 @@ enum v2g_event iso_handle_request(v2g_connection *conn) {
 	 */
 	if (exi_in->V2G_Message.Body.CurrentDemandReq_isUsed) {
 		dlog(DLOG_LEVEL_TRACE, "Handling CurrentDemandReq");
+        if (conn->ctx->last_v2g_msg == V2G_POWER_DELIVERY_MSG) {
+            conn->ctx->p_charger->publish_currentDemand_Started(boost::blank{});
+            conn->ctx->session.is_charging = true;
+        }
 		conn->ctx->current_v2g_msg = V2G_CURRENT_DEMAND_MSG;
 		exi_out->V2G_Message.Body.CurrentDemandRes_isUsed = 1u;
 		init_iso1CurrentDemandResType(&exi_out->V2G_Message.Body.CurrentDemandRes);
@@ -1514,6 +1508,12 @@ enum v2g_event iso_handle_request(v2g_connection *conn) {
 	else if (exi_in->V2G_Message.Body.PaymentDetailsReq_isUsed) {
 		dlog(DLOG_LEVEL_TRACE, "Handling PaymentDetailsReq");
 		conn->ctx->current_v2g_msg = V2G_PAYMENT_DETAILS_MSG;
+        /* At first send  MQTT charging phase signal to the MQTT interface */
+        if (conn->ctx->last_v2g_msg != V2G_PAYMENT_DETAILS_MSG) {
+            if (conn->ctx->session.iso_selected_payment_option == iso1paymentOptionType_Contract) {
+                conn->ctx->p_charger->publish_Require_Auth_PnC(boost::blank{});
+            }
+        }
 		exi_out->V2G_Message.Body.PaymentDetailsRes_isUsed = 1u;
 		init_iso1PaymentDetailsResType(&exi_out->V2G_Message.Body.PaymentDetailsRes);
 		next_v2g_event = handle_iso_payment_details(conn); // [V2G2-559]
@@ -1521,11 +1521,12 @@ enum v2g_event iso_handle_request(v2g_connection *conn) {
 	else if (exi_in->V2G_Message.Body.AuthorizationReq_isUsed) {
 		dlog(DLOG_LEVEL_TRACE, "Handling AuthorizationReq");
 		conn->ctx->current_v2g_msg = V2G_AUTHORIZATION_MSG;
-		/* At first send  MQTT charging phase signal to the customer interface */
-		if (conn->ctx->last_v2g_msg != V2G_AUTHORIZATION_MSG) {
-			// TODO: signal finishing of charging initialization and starting of authorization
-		}
-
+		/* At first send  MQTT charging phase signal to the MQTT interface */
+        if (conn->ctx->last_v2g_msg != V2G_AUTHORIZATION_MSG) {
+            if (conn->ctx->session.iso_selected_payment_option == iso1paymentOptionType_ExternalPayment) {
+                conn->ctx->p_charger->publish_Require_Auth_EIM(boost::blank{});
+            }
+        }
 		exi_out->V2G_Message.Body.AuthorizationRes_isUsed = 1u;
 		init_iso1AuthorizationResType(&exi_out->V2G_Message.Body.AuthorizationRes);
 		next_v2g_event = handle_iso_authorization(conn); // [V2G2-562]
@@ -1548,16 +1549,6 @@ enum v2g_event iso_handle_request(v2g_connection *conn) {
 	else if (exi_in->V2G_Message.Body.PowerDeliveryReq_isUsed) {
 		dlog(DLOG_LEVEL_TRACE, "Handling PowerDeliveryReq");
 		conn->ctx->current_v2g_msg = V2G_POWER_DELIVERY_MSG;
-		/* At first send  MQTT charging phase signal to the customer interface */
-		if (conn->ctx->is_dc_charger == true) {
-			if (conn->ctx->last_v2g_msg == V2G_PRE_CHARGE_MSG) {
-				// TODO: signal finishing of precharging phase and starting of charging phase
-			}
-		}
-		else if (conn->ctx->last_v2g_msg == V2G_CHARGE_PARAMETER_DISCOVERY_MSG) {
-			// TODO: signal finishing of parameter-phase and starting of charging phase
-		}
-
 		exi_out->V2G_Message.Body.PowerDeliveryRes_isUsed = 1u;
 		init_iso1PowerDeliveryResType(&exi_out->V2G_Message.Body.PowerDeliveryRes);
 		next_v2g_event = handle_iso_power_delivery(conn); // [V2G2-589]
@@ -1599,7 +1590,7 @@ enum v2g_event iso_handle_request(v2g_connection *conn) {
 		conn->ctx->current_v2g_msg = V2G_CABLE_CHECK_MSG;
 		/* At first send mqtt charging phase signal to the customer interface */
 		if (V2G_CHARGE_PARAMETER_DISCOVERY_MSG == conn->ctx->last_v2g_msg) {
-			// TODO: signal finishing of parameter-phase and starting of isolation phase
+            conn->ctx->p_charger->publish_Start_CableCheck(boost::blank{});
 		}
 
 		exi_out->V2G_Message.Body.CableCheckRes_isUsed = 1u;

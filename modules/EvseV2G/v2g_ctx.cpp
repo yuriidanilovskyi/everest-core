@@ -125,6 +125,7 @@ void v2g_ctx_init_charging_state(struct v2g_context * const ctx, bool is_connect
     ctx->state = 0; // WAIT_FOR_SESSIONSETUP
     ctx->selected_protocol = V2G_UNKNOWN_PROTOCOL;
     ctx->session.renegotiation_required = false;
+    ctx->session.is_charging = false;
 
     /* Reset timer */
     if (NULL != ctx->com_setup_timeout) {
@@ -144,6 +145,7 @@ void v2g_ctx_init_charging_values(struct v2g_context * const ctx) {
     ctx->ci_evse.evse_notification = (uint8_t) 0;
     memset(ctx->ci_evse.evse_status_code, iso1DC_EVSEStatusCodeType_EVSE_NotReady, PHASE_LENGTH);
     memset(ctx->ci_evse.evse_processing, iso1EVSEProcessingType_Ongoing, PHASE_LENGTH);
+    ctx->ci_evse.evse_processing[PHASE_PARAMETER] = iso1EVSEProcessingType_Finished; // Skip parameter phase
     strcpy((char*) ctx->ci_evse.evse_id.bytes, "DE*CBY*ETE1*234");
     ctx->ci_evse.evse_id.bytesLen = (uint16_t) strlen((const char*) ctx->ci_evse.evse_id.bytes);
     ctx->ci_evse.date_time_now_is_used = (unsigned int) 0;
