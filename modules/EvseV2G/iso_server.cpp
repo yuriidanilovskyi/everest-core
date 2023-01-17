@@ -1003,12 +1003,33 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection *conn) {
             conn->ctx->session.is_charging = true;
 
             if (conn->ctx->is_dc_charger == false) {
-
+                int rv = 0;
                 // TODO: For AC charging wait for CP state C or D , before transmitting of the response. CP state is checked by other module
+                if (conn->ctx->ci_evse.contactor_is_closed == false) {
+                    // TODO: Signal closing contactor with MQTT if no timeout while waiting for state C or D
 
-                // TODO: Signal closing contactor with MQTT if no timeout while waiting for state C or D
+                    /* determine timeout for contactor */
+                    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+                    timespec_add_ms(&ts_abs_timeout, V2G_CONTACTOR_CLOSE_TIMEOUT);
 
-                // TODO: Set response to iso1responseCodeType_FAILED_ContactorError if contactor failed to close within time
+                    /* wait for contactor to really close or timeout */
+                    dlog(DLOG_LEVEL_INFO, "Waiting for contactor is closed");
+
+                    while ((rv == 0) && (conn->ctx->ci_evse.contactor_is_closed == false) &&
+                         (conn->ctx->intl_emergency_shutdown == false) &&
+                         (conn->ctx->stop_hlc == false) &&
+                         (conn->ctx->is_connection_terminated == false)) {
+                        pthread_mutex_lock(&conn->ctx->mqtt_lock);
+                        rv = pthread_cond_timedwait(&conn->ctx->mqtt_cond, &conn->ctx->mqtt_lock, &ts_abs_timeout);
+                        if (rv == EINTR)
+                            rv = 0; /* restart */
+                        if (rv == ETIMEDOUT) {
+                            dlog(DLOG_LEVEL_ERROR, "timeout while waiting for contactor to close, signaling error");
+                            res->ResponseCode = iso1responseCodeType_FAILED_ContactorError;
+                        }
+                        pthread_mutex_unlock(&conn->ctx->mqtt_lock);
+                    }
+                }
             }
 
             break;
