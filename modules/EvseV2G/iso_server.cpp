@@ -338,6 +338,15 @@ static void check_iso1_charging_profile_values(iso1PowerDeliveryReqType *req, is
         }
     }
 }
+
+static void publish_DC_EVStatusType(ISO15118_chargerImplBase* p_charger, const struct iso1DC_EVStatusType& iso1_ev_status) {
+    types::iso15118_charger::DC_EVStatusType ev_status;
+    ev_status.DC_EVErrorCode = static_cast<types::iso15118_charger::DC_EVErrorCode>(iso1_ev_status.EVErrorCode);
+    ev_status.DC_EVReady = iso1_ev_status.EVReady;
+    ev_status.DC_EVRESSSOC = static_cast<float>(iso1_ev_status.EVRESSSOC);
+    p_charger->publish_DC_EVStatus(ev_status);
+}
+
 //=============================================
 //             Publishing request msg
 //=============================================
@@ -383,43 +392,76 @@ static void publish_iso_authorization_req(struct iso1AuthorizationReqType const 
  * \param v2g_charge_parameter_discovery_req is the request message.
  */
 static void publish_iso_charge_parameter_discovery_req(ISO15118_chargerImplBase* p_charger, struct iso1ChargeParameterDiscoveryReqType const * const v2g_charge_parameter_discovery_req) {
-	    //TODO: V2G values that can be published: AC_EVChargeParameter, DC_EVChargeParameter, MaxEntriesSAScheduleTuple
-        p_charger->publish_RequestedEnergyTransferMode(static_cast<types::iso15118_charger::EnergyTransferMode>(v2g_charge_parameter_discovery_req->RequestedEnergyTransferMode));
-}
+    //TODO: V2G values that can be published: DC_EVChargeParameter, MaxEntriesSAScheduleTuple
+    p_charger->publish_RequestedEnergyTransferMode(static_cast<types::iso15118_charger::EnergyTransferMode>(v2g_charge_parameter_discovery_req->RequestedEnergyTransferMode));
+    if(v2g_charge_parameter_discovery_req->AC_EVChargeParameter_isUsed == (unsigned int) 1) {
+        if (v2g_charge_parameter_discovery_req->AC_EVChargeParameter.DepartureTime_isUsed == (unsigned int) 1) {
+            p_charger->publish_DepartureTime(std::to_string(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.DepartureTime));
+        }
+            p_charger->publish_AC_EAmount(calc_physical_value(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EAmount.Value,
+                                                              v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EAmount.Multiplier));
+            p_charger->publish_AC_EVMaxVoltage(calc_physical_value(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMaxVoltage.Value, 
+                                               v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMaxVoltage.Multiplier));
+            p_charger->publish_AC_EVMaxCurrent(calc_physical_value(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMaxCurrent.Value, 
+                                               v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMaxCurrent.Multiplier));
+            p_charger->publish_AC_EVMinCurrent(calc_physical_value(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMinCurrent.Value, 
+                                               v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EVMinCurrent.Multiplier));
+    }
+    else if(v2g_charge_parameter_discovery_req->DC_EVChargeParameter_isUsed == (unsigned int) 1) {
+        if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DepartureTime_isUsed == (unsigned int) 1) {
+            p_charger->publish_DepartureTime(std::to_string(v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DepartureTime));
 
-/*!
- * \brief publish_iso_cable_check_req This function publishes the iso_cable_check_req message to the MQTT interface.
- * \param v2g_cable_check_req is the request message.
- */
-static void publish_iso_cable_check_req(struct iso1CableCheckReqType const * const v2g_cable_check_req) {
-    //TODO: V2G values that can be published: EVErrorCode, EVReady, EVRESSSOC
+            if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity_isUsed == (unsigned int) 1) {
+                p_charger->publish_DC_EVEnergyCapacity(calc_physical_value(v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity.Value, 
+                                                       v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity.Multiplier));
+            }
+            if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest_isUsed == (unsigned int) 1) {
+                p_charger->publish_DC_EVEnergyRequest(calc_physical_value(v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Value, 
+                                                      v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Multiplier));
+            }
+            if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.FullSOC_isUsed == (unsigned int) 1) {
+                p_charger->publish_DC_FullSOC(v2g_charge_parameter_discovery_req->DC_EVChargeParameter.FullSOC);
+            }
+            if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.BulkSOC_isUsed == (unsigned int) 1) {
+                p_charger->publish_DC_BulkSOC(v2g_charge_parameter_discovery_req->DC_EVChargeParameter.BulkSOC);
+            }
+            publish_DC_EVStatusType(p_charger, v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus);
+        }
+    }
 }
 
 /*!
  * \brief publish_iso_pre_charge_req This function publishes the iso_pre_charge_req message to the MQTT interface.
+ * \param p_charger to publish MQTT topics.
  * \param v2g_precharge_req is the request message.
  */
-static void publish_iso_pre_charge_req(struct iso1PreChargeReqType const * const v2g_precharge_req) {
-    //TODO: V2G values that can be published: EVErrorCode, EVReady, EVRESSSOC, EVTargetCurrent, EVTargetVoltage
+static void publish_iso_pre_charge_req(ISO15118_chargerImplBase* p_charger, struct iso1PreChargeReqType const * const v2g_precharge_req) {
+    //TODO: V2G values that can be published: EVTargetCurrent, EVTargetVoltage
+    publish_DC_EVStatusType(p_charger, v2g_precharge_req->DC_EVStatus);
 }
 
 /*!
  * \brief publish_iso_power_delivery_req This function publishes the iso_power_delivery_req message to the MQTT interface.
+ * \param p_charger to publish MQTT topics.
  * \param v2g_power_delivery_req is the request message.
  */
-static void publish_iso_power_delivery_req(struct iso1PowerDeliveryReqType const * const v2g_power_delivery_req) {
+static void publish_iso_power_delivery_req(ISO15118_chargerImplBase* p_charger, struct iso1PowerDeliveryReqType const * const v2g_power_delivery_req) {
     //TODO: V2G values that can be published: ChargeProgress, SAScheduleTupleID, EVPowerDeliveryParameter.ChargingComplete/BulkChargingComplete,
-    //                                        EVTargetCurrent, EVTargetVoltage, EVErrorCode, EVReady, EVRESSSOC
+    //                                        EVTargetCurrent, EVTargetVoltage
+    if (v2g_power_delivery_req->DC_EVPowerDeliveryParameter_isUsed == (unsigned int) 1) {
+        publish_DC_EVStatusType(p_charger, v2g_power_delivery_req->DC_EVPowerDeliveryParameter.DC_EVStatus);
+    }
 }
 
 /*!
  * \brief publish_iso_current_demand_req This function publishes the iso_current_demand_req message to the MQTT interface.
  * \param v2g_current_demand_req is the request message.
  */
-static void publish_iso_current_demand_req(struct iso1CurrentDemandReqType const * const v2g_current_demand_req, struct v2g_context *ctx) {
-    //TODO: V2G values that can be published (if used): ChargingComplete/BulkChargingComplete, EVErrorCode, EVReady, EVRESSSOC, EVMaximumCurrentLimit,
+static void publish_iso_current_demand_req(ISO15118_chargerImplBase* p_charger, struct iso1CurrentDemandReqType const * const v2g_current_demand_req) {
+    //TODO: V2G values that can be published (if used): ChargingComplete/BulkChargingComplete, EVMaximumCurrentLimit,
     //                                                  EVMaximumPowerLimit, EVMaximumVoltageLimit, EVTargetCurrent, EVTargetVoltage, RemainingTimeToBulkSoC,
     //                                                  RemainingTimeToFullSoC
+    publish_DC_EVStatusType(p_charger, v2g_current_demand_req->DC_EVStatus);
 }
 
 /*!
@@ -432,10 +474,12 @@ static void publish_iso_metering_receipt_req(struct iso1MeteringReceiptReqType c
 
 /*!
  * \brief publish_iso_welding_detection_req This function publishes the iso_welding_detection_req message to the MQTT interface.
+ * \param p_charger to publish MQTT topics.
  * \param v2g_welding_detection_req is the request message.
  */
-static void publish_iso_welding_detection_req(struct iso1WeldingDetectionReqType const * const v2g_welding_detection_req) {
+static void publish_iso_welding_detection_req(ISO15118_chargerImplBase* p_charger, struct iso1WeldingDetectionReqType const * const v2g_welding_detection_req) {
     //TODO: V2G values that can be published: EVErrorCode, EVReady, EVRESSSOC
+    publish_DC_EVStatusType(p_charger, v2g_welding_detection_req->DC_EVStatus);
 }
 
 /*!
@@ -982,7 +1026,7 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection *conn) {
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     /* At first, publish the received EV request message to the MQTT interface */
-    publish_iso_power_delivery_req(req);
+    publish_iso_power_delivery_req(conn->ctx->p_charger, req);
 
     /* build up response */
     res->ResponseCode = iso1responseCodeType_OK;
@@ -1252,7 +1296,7 @@ static enum v2g_event handle_iso_cable_check(struct v2g_connection *conn) {
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     /* At first, publish the received EV request message to the MQTT interface */
-    publish_iso_cable_check_req(req);
+    publish_DC_EVStatusType(conn->ctx->p_charger, req->DC_EVStatus);
 
     // TODO: For DC charging wait for CP state C or D , before transmitting of the response ([V2G2-917], [V2G2-918]). CP state is checked by other module
 
@@ -1286,7 +1330,7 @@ static enum v2g_event handle_iso_pre_charge(struct v2g_connection *conn) {
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     /* At first, publish the received EV request message to the MQTT interface */
-    publish_iso_pre_charge_req(req);
+    publish_iso_pre_charge_req(conn->ctx->p_charger, req);
 
     /* Fill the PreChargeRes*/
     res->DC_EVSEStatus.EVSEIsolationStatus = (iso1isolationLevelType) conn->ctx->ci_evse.evse_isolation_status;
@@ -1318,7 +1362,7 @@ static enum v2g_event handle_iso_current_demand(struct v2g_connection *conn) {
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     /* At first, publish the received EV request message to the MQTT interface */
-    publish_iso_current_demand_req(req, conn->ctx);
+    publish_iso_current_demand_req(conn->ctx->p_charger, req);
 
     res->DC_EVSEStatus.EVSEIsolationStatus = (iso1isolationLevelType) conn->ctx->ci_evse.evse_isolation_status;
     res->DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->ci_evse.evse_isolation_status_is_used;
@@ -1367,7 +1411,7 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection *conn) 
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
 
     /* At first, publish the received EV request message to the MQTT interface */
-    publish_iso_welding_detection_req(req);
+    publish_iso_welding_detection_req(conn->ctx->p_charger, req);
 
     // TODO: Wait for CP state B, before transmitting of the response, or signal intl_emergency_shutdown in conn->ctx ([V2G2-920], [V2G2-921]).
 

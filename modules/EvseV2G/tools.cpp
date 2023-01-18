@@ -12,6 +12,7 @@
 #include <string.h>
 #include <time.h>
 #include <dirent.h>
+#include <math.h>
 #include "tools.hpp"
 #include "log.hpp"
 
@@ -192,6 +193,10 @@ long long int getmonotonictime() {
 		struct timespec time;
 		clock_gettime(CLOCK_MONOTONIC, &time);
 		return time.tv_sec * 1000 + time.tv_nsec / 1000000;
+}
+
+double calc_physical_value(const int16_t& value, const int8_t& multiplier) {
+	return static_cast<double>(value * pow(10.0, multiplier));
 }
 
 bool range_check_int32(int32_t min, int32_t max, int32_t value) {

@@ -57,6 +57,14 @@ long long timespec_to_us(struct timespec ts);
 int msleep(int ms);
 long long int getmonotonictime(void);
 
+/*! 
+ *  \brief calc_physical_value This function calculates the physical value consists on a value and multiplier.
+ *  \param value is the value of the physical value
+ *  \param multiplier is the multiplier of the physical value
+ *  \return Returns the physical value
+ */
+double calc_physical_value(const int16_t& value, const int8_t& multiplier);
+
 /*!
  * \brief range_check_int32 This function checks if an int32 value is within the given range.
  * \param min is the min value.
