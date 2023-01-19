@@ -155,9 +155,9 @@ void ISO15118_chargerImpl::handle_set_EVSEEnergyToBeDelivered(double& EVSEEnergy
 
 void ISO15118_chargerImpl::handle_enable_debug_mode(types::iso15118_charger::DebugMode& debug_mode){
     if (debug_mode == types::iso15118_charger::DebugMode::None) {
-        v2g_ctx->pncDebugMode = false;
+        v2g_ctx->debugMode = false;
     } else {
-        v2g_ctx->pncDebugMode = true;
+        v2g_ctx->debugMode = true;
     }
 };
 

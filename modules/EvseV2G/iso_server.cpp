@@ -654,7 +654,7 @@ static enum v2g_event handle_iso_service_discovery(struct v2g_connection *conn) 
     if ((!conn->is_tls_connection) && 
         ((conn->ctx->ci_evse.payment_option_list[0] == iso1paymentOptionType_Contract)||
         (conn->ctx->ci_evse.payment_option_list[1] == iso1paymentOptionType_Contract)) && 
-        (false == conn->ctx->pncDebugMode)) {
+        (false == conn->ctx->debugMode)) {
         conn->ctx->ci_evse.payment_option_list[0] = iso1paymentOptionType_ExternalPayment;
         conn->ctx->ci_evse.payment_option_list_len = 1;
         dlog(DLOG_LEVEL_WARNING, "PnC is not allowed without TLS-communication. Correcting value to '1' (ExternalPayment)");

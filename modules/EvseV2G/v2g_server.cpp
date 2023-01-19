@@ -127,6 +127,8 @@ static enum v2g_event v2g_handle_apphandshake(struct v2g_connection *conn)
         return V2G_EVENT_TERMINATE_CONNECTION; // If the mesage can't be decoded we have to terminate the tcp-connection (e.g. after an unexpected message)
     }
 
+    json appProtocolArray = json::array(); // to publish supported app protocol array
+
     for (i = 0; i < conn->handshake_req.supportedAppProtocolReq.AppProtocol.arrayLen ; i++) {
         struct appHandAppProtocolType *app_proto = &conn->handshake_req.supportedAppProtocolReq.AppProtocol.array[i];
         char *proto_ns = strndup((const char *)app_proto->ProtocolNamespace.characters, app_proto->ProtocolNamespace.charactersLen);
@@ -155,9 +157,24 @@ static enum v2g_event v2g_handle_apphandshake(struct v2g_connection *conn)
             conn->ctx->selected_protocol = V2G_PROTO_ISO15118_2013;
         }
 
+        if (conn->ctx->debugMode == true) {
+            /* Create json array for publishing */
+            json appProtocolElement;
+            appProtocolElement["ProtocolNamespace"] = std::string(proto_ns);
+            appProtocolElement["VersionNumberMajor"] = app_proto->VersionNumberMajor;
+            appProtocolElement["VersionNumberMinor"] = app_proto->VersionNumberMinor;
+            appProtocolElement["SchemaID"] = app_proto->SchemaID;
+            appProtocolElement["Priority"] = app_proto->Priority;
+            appProtocolArray.push_back(appProtocolElement);
+        }
+
         // TODO: ISO15118v2
 
         free(proto_ns);
+    }
+
+    if (conn->ctx->debugMode == true) {
+        conn->ctx->p_charger->publish_EV_AppProtocol(appProtocolArray);
     }
 
     if (conn->handshake_resp.supportedAppProtocolRes.ResponseCode == appHandresponseCodeType_OK_SuccessfulNegotiation) {

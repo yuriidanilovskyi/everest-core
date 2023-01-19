@@ -240,7 +240,7 @@ struct v2g_context {
     int state; /* holds the current state id */
     bool is_dc_charger; /* Is set to true if it is a dc charger. Value is configured after configuration of the supported energy type */
     bool pncOnlineMode; /* Is set to true if online-mode is activated */
-    bool pncDebugMode; /* To activate deactivate the PnC debug mode */
+    bool debugMode; /* To activate deactivate the PnC debug mode */
     enum charging_type evse_charging_type; /* Configured charging type via customer.json */
     bool use_relaxed_timings; /* Is set to true if timings shall not be strict */
     int8_t supported_protocols; /* Is an bit mask and holds the supported app protocols. See v2g_protocol enum */

@@ -283,7 +283,7 @@ struct v2g_context *v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase)
     ctx->endTlsDebugBySessionStop = true;
 
 
-    ctx->pncDebugMode = false;
+    ctx->debugMode = false;
 
     ctx->mqtt_data.authorization_status = -1;
 
