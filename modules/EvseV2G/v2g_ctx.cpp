@@ -143,7 +143,10 @@ void v2g_ctx_init_charging_values(struct v2g_context * const ctx) {
     ctx->ci_evse.evse_isolation_status = (uint8_t) iso1isolationLevelType_Invalid;
     ctx->ci_evse.evse_isolation_status_is_used = (unsigned int) 1; // Shall be used in DIN
     ctx->ci_evse.evse_notification = (uint8_t) 0;
-    memset(ctx->ci_evse.evse_status_code, iso1DC_EVSEStatusCodeType_EVSE_NotReady, PHASE_LENGTH);
+    ctx->ci_evse.evse_status_code[PHASE_PARAMETER] = iso1DC_EVSEStatusCodeType_EVSE_NotReady;
+    ctx->ci_evse.evse_status_code[PHASE_ISOLATION] = iso1DC_EVSEStatusCodeType_EVSE_Ready;
+    ctx->ci_evse.evse_status_code[PHASE_PRECHARGE] = iso1DC_EVSEStatusCodeType_EVSE_Ready;
+    ctx->ci_evse.evse_status_code[PHASE_CHARGE] = iso1DC_EVSEStatusCodeType_EVSE_Ready;
     memset(ctx->ci_evse.evse_processing, iso1EVSEProcessingType_Ongoing, PHASE_LENGTH);
     ctx->ci_evse.evse_processing[PHASE_PARAMETER] = iso1EVSEProcessingType_Finished; // Skip parameter phase
     strcpy((char*) ctx->ci_evse.evse_id.bytes, "DE*CBY*ETE1*234");

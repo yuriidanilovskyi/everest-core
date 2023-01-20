@@ -1201,9 +1201,9 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection *conn) {
             conn->ctx->ci_evse.evse_processing[PHASE_PARAMETER] = iso1EVSEProcessingType_Ongoing;
             conn->ctx->ci_evse.evse_processing[PHASE_ISOLATION] = iso1EVSEProcessingType_Ongoing;
             conn->ctx->ci_evse.evse_status_code[PHASE_PARAMETER] = iso1DC_EVSEStatusCodeType_EVSE_NotReady;
-            conn->ctx->ci_evse.evse_status_code[PHASE_ISOLATION] = iso1DC_EVSEStatusCodeType_EVSE_NotReady;
-            conn->ctx->ci_evse.evse_status_code[PHASE_PRECHARGE] = iso1DC_EVSEStatusCodeType_EVSE_NotReady;
-            conn->ctx->ci_evse.evse_status_code[PHASE_CHARGE] = iso1DC_EVSEStatusCodeType_EVSE_NotReady;
+            conn->ctx->ci_evse.evse_status_code[PHASE_ISOLATION] = iso1DC_EVSEStatusCodeType_EVSE_Ready;
+            conn->ctx->ci_evse.evse_status_code[PHASE_PRECHARGE] = iso1DC_EVSEStatusCodeType_EVSE_Ready;
+            conn->ctx->ci_evse.evse_status_code[PHASE_CHARGE] = iso1DC_EVSEStatusCodeType_EVSE_Ready;
             conn->ctx->ci_evse.evse_notification = (iso1EVSENotificationType_ReNegotiation == conn->ctx->ci_evse.evse_notification) ?
                     iso1EVSENotificationType_None : conn->ctx->ci_evse.evse_notification;
             conn->ctx->ci_evse.evse_isolation_status = iso1isolationLevelType_Invalid;
