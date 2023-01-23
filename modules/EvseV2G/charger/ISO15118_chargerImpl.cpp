@@ -190,7 +190,7 @@ void ISO15118_chargerImpl::handle_set_RCD_Error(bool& RCD){
 };
 
 void ISO15118_chargerImpl::handle_stop_charging(bool& stop_charging){
-    // your code for cmd stop_charging goes here
+    v2g_ctx->stop_hlc = stop_charging;
 };
 
 void ISO15118_chargerImpl::handle_set_DC_EVSEPresentVoltageCurrent(
