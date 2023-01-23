@@ -99,14 +99,18 @@ void ISO15118_chargerImpl::handle_set_SupportedEnergyTransferMode(Array& Support
 
     uint8_t arrayLen = std::min(iso1SupportedEnergyTransferModeType_EnergyTransferMode_ARRAY_SIZE, 
                         static_cast<int>(SupportedEnergyTransferMode.size()));
+
+    v2g_ctx->is_dc_charger = true;
     
     for (auto& element : SupportedEnergyTransferMode) {
         if(element.is_string()) {
             if (std::string("AC_single_phase_core").compare(element.get<std::string>()) == 0) {
                 energyArray[(energyArrayLen)++] = iso1EnergyTransferModeType_AC_single_phase_core;
+                v2g_ctx->is_dc_charger = false;
             }
             else if (std::string("AC_three_phase_core").compare(element.get<std::string>()) == 0) {
                 energyArray[(energyArrayLen)++] = iso1EnergyTransferModeType_AC_three_phase_core;
+                v2g_ctx->is_dc_charger = false;
             }
             else if (std::string("DC_core").compare(element.get<std::string>()) == 0) {
                 energyArray[(energyArrayLen)++] = iso1EnergyTransferModeType_DC_core;
