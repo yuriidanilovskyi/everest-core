@@ -324,46 +324,42 @@ struct v2g_context {
     } session;
 
     struct {
-        struct {
-            int bulkChargingComplete;
-            int chargingComplete;
+        int bulk_charging_complete;
+        int charging_complete;
 
-            union {
-                struct dinDC_EVStatusType dinDcEvStatus;
-                struct iso1DC_EVStatusType isoDcEvStatus;
-            };
-            union {
-                struct dinPhysicalValueType dinEVMaximumCurrentLimit;
-                struct iso1PhysicalValueType iso1EVMaximumCurrentLimit;
-            };
-            union {
-                struct dinPhysicalValueType dinEVMaximumPowerLimit;
-                struct iso1PhysicalValueType iso1EVMaximumPowerLimit;
-            };
-            union {
-                struct dinPhysicalValueType dinEVMaximumVoltageLimit;
-                struct iso1PhysicalValueType iso1EVMaximumVoltageLimit;
-            };
-            union {
-                struct dinPhysicalValueType dinEVTargetCurrent;
-                struct iso1PhysicalValueType iso1EVTargetCurrent;
-            };
-            union {
-                struct dinPhysicalValueType dinEVTargetVoltage;
-                struct iso1PhysicalValueType iso1EVTargetVoltage;
-            };
-            union {
-                struct dinPhysicalValueType dinRemainingTimeToBulkSoC;
-                struct iso1PhysicalValueType iso1RemainingTimeToBulkSoC;
-            };
-            union {
-                struct dinPhysicalValueType dinRemainingTimeToFullSoC;
-                struct iso1PhysicalValueType iso1RemainingTimeToFullSoC;
-            };
-        } evCurrentDemandReq;
-
-    } evV2gData;
-
+        union {
+            struct dinDC_EVStatusType din_dc_ev_status;
+            struct iso1DC_EVStatusType iso1_dc_ev_status;
+        };
+        union {
+            struct dinPhysicalValueType din_ev_maximum_current_limit;
+            struct iso1PhysicalValueType iso1_ev_maximum_current_limit;
+        };
+        union {
+            struct dinPhysicalValueType din_ev_maximum_power_limit;
+            struct iso1PhysicalValueType iso1_ev_maximum_power_limit;
+        };
+        union {
+            struct dinPhysicalValueType din_ev_maximum_voltage_limit;
+            struct iso1PhysicalValueType iso1_ev_maximum_voltage_limit;
+        };
+        union {
+            struct dinPhysicalValueType din_ev_target_current;
+            struct iso1PhysicalValueType iso1_ev_target_current;
+        };
+        union {
+            struct dinPhysicalValueType din_ev_target_voltage;
+            struct iso1PhysicalValueType iso1_ev_target_voltage;
+        };
+        union {
+            struct dinPhysicalValueType din_remaining_time_to_bulk_soc;
+            struct iso1PhysicalValueType iso1_remaining_time_to_bulk_soc;
+        };
+        union {
+            struct dinPhysicalValueType din_remaining_time_to_full_soc;
+            struct iso1PhysicalValueType iso1_remaining_time_to_full_soc;
+        };
+    } ev_v2g_data;
 };
 
 enum mqtt_dlink_action {

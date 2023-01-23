@@ -226,8 +226,8 @@ void v2g_ctx_init_charging_values(struct v2g_context * const ctx) {
     // AC evse power values
     init_physical_value(&ctx->ci_evse.evse_nominal_voltage, iso1unitSymbolType_V);
 
-    // Init ev received v2g-data to an invalid state
-    memset(&ctx->evV2gData.evCurrentDemandReq, 0xff, sizeof(ctx->evV2gData.evCurrentDemandReq));
+    // Init EV received v2g-data to an invalid state
+    memset(&ctx->ev_v2g_data, 0xff, sizeof(ctx->ev_v2g_data));
 
     /* OppCharge specific configuration */
     if (ctx->evse_charging_type == CHARGING_TYPE_OPPCHARGE) {
