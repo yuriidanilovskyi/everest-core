@@ -1138,8 +1138,6 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection *conn) {
             break;
 
         case iso1chargeProgressType_Renegotiate:
-
-            res->ResponseCode = (conn->ctx->session.is_charging == false) ? iso1responseCodeType_FAILED : res->ResponseCode; // [V2G2-812]
             conn->ctx->session.renegotiation_required = true;
             break;
 
@@ -1214,9 +1212,8 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection *conn) {
     }
     else {
         /* abort charging session if EV is ready to charge after current demand phase */
-        if (req->ChargeProgress == iso1chargeProgressType_Start) {
-            res->ResponseCode = iso1responseCodeType_FAILED;
-            next_event = V2G_EVENT_SEND_AND_TERMINATE;
+        if (req->ChargeProgress != iso1chargeProgressType_Stop) {
+            res->ResponseCode = iso1responseCodeType_FAILED; // (/*[V2G2-812]*/
         }
         conn->ctx->state = (conn->ctx->is_dc_charger == true) ? (int) iso_dc_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP : (int) iso_ac_state_id::WAIT_FOR_SESSIONSTOP; // [V2G-601], [V2G2-568]
     }
