@@ -422,8 +422,8 @@ static void publish_DC_EVRemainingTime(struct v2g_context *ctx,
     if (iso1_dc_ev_remaining_time_to_full_soc_is_used == (unsigned int) 1) {
         double remaining_time_to_full_soc = calc_physical_value(iso1_dc_ev_remaining_time_to_full_soc.Value, iso1_dc_ev_remaining_time_to_full_soc.Multiplier);
         if (old_remaining_time_to_full_soc != remaining_time_to_full_soc) {
-            time_now_in_sec += remaining_time_to_full_soc;
-            std::strftime(buffer, sizeof(buffer), format, std::gmtime(&time_now_in_sec));
+            std::time_t time_to_full_soc = time_now_in_sec + remaining_time_to_full_soc;
+            std::strftime(buffer, sizeof(buffer), format, std::gmtime(&time_to_full_soc));
             DC_EVRemainingTime.EV_RemainingTimeToFullSoC = static_cast<boost::optional<std::string>>(buffer);
             memcpy(&ctx->ev_v2g_data.iso1_remaining_time_to_full_soc, &iso1_dc_ev_remaining_time_to_full_soc, sizeof(iso1PhysicalValueType));
             publish_message = true;
@@ -432,8 +432,8 @@ static void publish_DC_EVRemainingTime(struct v2g_context *ctx,
     if (iso1_dc_ev_remaining_time_to_bulk_soc_is_used == (unsigned int) 1) {
         double remaining_time_to_bulk_soc = calc_physical_value(iso1_dc_ev_remaining_time_to_bulk_soc.Value, iso1_dc_ev_remaining_time_to_bulk_soc.Multiplier);
         if (old_remaining_time_to_bulk_soc != remaining_time_to_bulk_soc) {
-            time_now_in_sec += remaining_time_to_bulk_soc;
-            std::strftime(buffer, sizeof(buffer), format, std::gmtime(&time_now_in_sec));
+            std::time_t time_to_bulk_soc = time_now_in_sec + remaining_time_to_bulk_soc;
+            std::strftime(buffer, sizeof(buffer), format, std::gmtime(&time_to_bulk_soc));
             DC_EVRemainingTime.EV_RemainingTimeToBulkSoC = static_cast<boost::optional<std::string>>(buffer);
             memcpy(&ctx->ev_v2g_data.iso1_remaining_time_to_bulk_soc, &iso1_dc_ev_remaining_time_to_bulk_soc, sizeof(iso1PhysicalValueType));
             publish_message = true;
