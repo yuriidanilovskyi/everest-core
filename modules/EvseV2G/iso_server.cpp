@@ -1422,6 +1422,14 @@ static enum v2g_event handle_iso_current_demand(struct v2g_connection *conn) {
     res->DC_EVSEStatus.EVSENotification = (iso1EVSENotificationType) conn->ctx->ci_evse.evse_notification;
     res->DC_EVSEStatus.EVSEStatusCode = (iso1DC_EVSEStatusCodeType) conn->ctx->ci_evse.evse_status_code[PHASE_CHARGE];
     res->DC_EVSEStatus.NotificationMaxDelay = (uint16_t) conn->ctx->ci_evse.notification_max_delay;
+    if ((conn->ctx->ci_evse.evse_maximum_current_limit_is_used == 1) &&
+            (calc_physical_value(req->EVTargetCurrent.Value, req->EVTargetCurrent.Multiplier) >=
+                    calc_physical_value(conn->ctx->ci_evse.evse_maximum_current_limit.Value, conn->ctx->ci_evse.evse_maximum_current_limit.Multiplier))) {
+        conn->ctx->ci_evse.evse_current_limit_achieved = (int) 1;
+    }
+    else {
+        conn->ctx->ci_evse.evse_current_limit_achieved = (int) 0;
+    }
     res->EVSECurrentLimitAchieved = conn->ctx->ci_evse.evse_current_limit_achieved;
     memcpy(res->EVSEID.characters, conn->ctx->ci_evse.evse_id.bytes, conn->ctx->ci_evse.evse_id.bytesLen);
     res->EVSEID.charactersLen = conn->ctx->ci_evse.evse_id.bytesLen;
@@ -1431,9 +1439,26 @@ static enum v2g_event handle_iso_current_demand(struct v2g_connection *conn) {
     res->EVSEMaximumPowerLimit_isUsed = conn->ctx->ci_evse.evse_maximum_power_limit_is_used;
     res->EVSEMaximumVoltageLimit = conn->ctx->ci_evse.evse_maximum_voltage_limit;
     res->EVSEMaximumVoltageLimit_isUsed = conn->ctx->ci_evse.evse_maximum_voltage_limit_is_used;
+    double EVTargetPower = calc_physical_value(req->EVTargetCurrent.Value, req->EVTargetCurrent.Multiplier) *
+            calc_physical_value(req->EVTargetVoltage.Value, req->EVTargetVoltage.Multiplier);
+    if ((conn->ctx->ci_evse.evse_maximum_power_limit_is_used  == 1) && (EVTargetPower >=
+            calc_physical_value(conn->ctx->ci_evse.evse_maximum_power_limit.Value, conn->ctx->ci_evse.evse_maximum_power_limit.Multiplier))) {
+        conn->ctx->ci_evse.evse_power_limit_achieved = (int) 1;
+    }
+    else {
+        conn->ctx->ci_evse.evse_power_limit_achieved = (int) 0;
+    }
     res->EVSEPowerLimitAchieved = conn->ctx->ci_evse.evse_power_limit_achieved;
     res->EVSEPresentCurrent = conn->ctx->ci_evse.evse_present_current;
     res->EVSEPresentVoltage = conn->ctx->ci_evse.evse_present_voltage;
+    if ((conn->ctx->ci_evse.evse_maximum_voltage_limit_is_used  == 1) &&
+            (calc_physical_value(req->EVTargetVoltage.Value, req->EVTargetVoltage.Multiplier) >=
+                    calc_physical_value(conn->ctx->ci_evse.evse_maximum_voltage_limit.Value, conn->ctx->ci_evse.evse_maximum_voltage_limit.Multiplier))) {
+        conn->ctx->ci_evse.evse_voltage_limit_achieved = (int) 1;
+    }
+    else {
+        conn->ctx->ci_evse.evse_voltage_limit_achieved = (int) 0;
+    }
     res->EVSEVoltageLimitAchieved = conn->ctx->ci_evse.evse_voltage_limit_achieved;
     //res->MeterInfo // TODO: PNC only
     res->MeterInfo_isUsed = 0;

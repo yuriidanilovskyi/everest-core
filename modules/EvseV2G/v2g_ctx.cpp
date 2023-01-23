@@ -210,14 +210,14 @@ void v2g_ctx_init_charging_values(struct v2g_context * const ctx) {
     ctx->ci_evse.evse_energy_to_be_delivered_is_used = (unsigned int) 0; // optional in din
     init_physical_value(&ctx->ci_evse.evse_maximum_current_limit, iso1unitSymbolType_A);
     ctx->ci_evse.evse_maximum_current_limit_is_used = (unsigned int) 0;
-    ctx->ci_evse.evse_current_limit_achieved = (int) 1;
+    ctx->ci_evse.evse_current_limit_achieved = (int) 0;
     init_physical_value(&ctx->ci_evse.evse_maximum_power_limit, iso1unitSymbolType_W);
     ctx->ci_evse.evse_maximum_power_limit_is_used = (unsigned int) 0;
-    ctx->ci_evse.evse_power_limit_achieved = (int) 1;
+    ctx->ci_evse.evse_power_limit_achieved = (int) 0;
     init_physical_value(&ctx->ci_evse.evse_maximum_voltage_limit, iso1unitSymbolType_V);
 
     ctx->ci_evse.evse_maximum_voltage_limit_is_used = (unsigned int) 0; // mandatory
-    ctx->ci_evse.evse_voltage_limit_achieved = (int) 1;
+    ctx->ci_evse.evse_voltage_limit_achieved = (int) 0;
     init_physical_value(&ctx->ci_evse.evse_minimum_current_limit, iso1unitSymbolType_A);
     init_physical_value(&ctx->ci_evse.evse_minimum_voltage_limit, iso1unitSymbolType_V);
     init_physical_value(&ctx->ci_evse.evse_peak_current_ripple, iso1unitSymbolType_A);
