@@ -32,9 +32,9 @@ types::board_support::Event cast_event_type(const ControlPilot::Event& e) {
     case ControlPilot::Event::Error_OverCurrent:
         return types::board_support::Event::ErrorOverCurrent;
     case ControlPilot::Event::EnterBCD:
-        return types::board_support::Event::EnterBCD;
+        return types::board_support::Event::EFtoBCD;
     case ControlPilot::Event::LeaveBCD:
-        return types::board_support::Event::LeaveBCD;
+        return types::board_support::Event::BCDtoEF;
     case ControlPilot::Event::PermanentFault:
         return types::board_support::Event::PermanentFault;
     case ControlPilot::Event::EvseReplugStarted:
