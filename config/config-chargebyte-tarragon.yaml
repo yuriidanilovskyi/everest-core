@@ -1,4 +1,8 @@
 active_modules:
+  iso15118_charger:
+    module: EvseV2G
+    config_module:
+      device: eth1
   EvseSlac0:
     config_implementation:
       main:
@@ -68,6 +72,9 @@ active_modules:
       slac:
         - implementation_id: main
           module_id: EvseSlac0
+      hlc:
+        - module_id: iso15118_charger
+          implementation_id: charger
     module: EvseManager
   grid_connection_point:
     config_module:
