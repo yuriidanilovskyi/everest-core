@@ -36,7 +36,7 @@ PowerSwitch::PowerSwitch(bool sense_1_active, bool sense_2_active) : sense_1_act
     if (relaisHealthy) {
         EVLOG_info << "relays healthy";
     } else {
-        EVLOG_warn << "relays not healthy";
+        EVLOG_warning << "relays not healthy";
     }
 }
 
