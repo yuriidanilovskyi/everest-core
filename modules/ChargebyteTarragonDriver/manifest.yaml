@@ -6,6 +6,7 @@ config:
     enum:
       - active
       - inactive
+      - simulate
     default: active
   sense_2_mode:
     description: Sense input needs reference to neutral (N) and can be wired for "active" or "inactive" feedback

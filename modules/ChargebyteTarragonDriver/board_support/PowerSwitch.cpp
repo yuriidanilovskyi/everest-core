@@ -12,7 +12,7 @@
 #include <chrono>
 #include <thread>
 
-PowerSwitch::PowerSwitch(bool sense_1_active, bool sense_2_active) : sense_1_active(sense_1_active), sense_2_active(sense_2_active) {
+PowerSwitch::PowerSwitch(bool sense_1_active, bool sense_1_simulate, bool sense_2_active) : sense_1_active(sense_1_active), sense_1_simulate(sense_1_simulate), sense_2_active(sense_2_active) {
     // get max phase count and current
     relay_1_path = boost::filesystem::path("/sys/class/gpio/gpio76/value");
     Everest::Utils::wait_until_exists_exception(relay_1_path, std::chrono::milliseconds(200));
@@ -51,12 +51,15 @@ bool PowerSwitch::isOn() {
 bool PowerSwitch::isActiveRelay1() {
     auto relay_1_sense = Everest::Utils::sysfs_read_string(relay_1_sense_path);
 
-    if (this->sense_1_active && relay_1_sense == "1") {
+    if (this->sense_1_simulate) {
+        EVLOG_info << "relaisOn:" << relaisOn;
+        return relaisOn;
+    }
+    else if (this->sense_1_active && relay_1_sense == "1") {
         return true;
     } else if (!this->sense_1_active && relay_1_sense == "0") {
         return true;
     }
-
     return false;
 }
 

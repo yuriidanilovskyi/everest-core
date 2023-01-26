@@ -33,7 +33,7 @@
 
 class PowerSwitch {
 public:
-    PowerSwitch(bool sense_1_active, bool sense_2_active);
+    PowerSwitch(bool sense_1_active, bool sense_1_simulate, bool sense_2_active);
     ~PowerSwitch();
     bool switchOnSinglePhase();
     bool switchOnThreePhase();
@@ -48,6 +48,7 @@ private:
     bool relaisOn;
     bool relaisHealthy;
     bool sense_1_active;
+    bool sense_1_simulate;
     bool sense_2_active;
 
     bool isActiveRelay1();
