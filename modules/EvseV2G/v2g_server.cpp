@@ -11,6 +11,7 @@
 #include <openv2g/iso1EXIDatatypes.h>
 #include <openv2g/iso1EXIDatatypesEncoder.h>
 #include <openv2g/iso1EXIDatatypesDecoder.h>
+#include <mbedtls/base64.h>
 #include <string.h>
 #include <inttypes.h>
 #include <stdlib.h>
@@ -24,6 +25,109 @@
 #include "tools.hpp"
 
 #define MAX_RES_TIME 98
+
+static types::iso15118_charger::V2G_Message_ID get_V2G_Message_ID(enum V2gMsgTypeId v2g_msg, bool is_req) {
+    switch (v2g_msg) {
+        case V2G_SUPPORTED_APP_PROTOCOL_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::SupportedAppProtocolReq;
+            else return types::iso15118_charger::V2G_Message_ID::SupportedAppProtocolRes;
+            break;
+        case V2G_SESSION_SETUP_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::SessionSetupReq;
+            else return types::iso15118_charger::V2G_Message_ID::SessionSetupRes;
+            break;
+        case V2G_SERVICE_DISCOVERY_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::ServiceDiscoveryReq;
+            else return types::iso15118_charger::V2G_Message_ID::ServiceDiscoveryRes;
+            break;
+        case V2G_SERVICE_DETAIL_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::ServiceDetailReq;
+            else return types::iso15118_charger::V2G_Message_ID::ServiceDetailRes;
+            break;
+        case V2G_PAYMENT_SERVICE_SELECTION_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::PaymentServiceSelectionReq;
+            else return types::iso15118_charger::V2G_Message_ID::PaymentServiceSelectionRes;
+            break;
+        case V2G_PAYMENT_DETAILS_MSG: // TODO: not implemented in EVerest V2G_Message_ID
+            break;
+        case V2G_AUTHORIZATION_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::AuthorizationReq;
+            else return types::iso15118_charger::V2G_Message_ID::AuthorizationRes;
+            break;
+        case V2G_CHARGE_PARAMETER_DISCOVERY_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::ChargeParameterDiscoveryReq;
+            else return types::iso15118_charger::V2G_Message_ID::ChargeParameterDiscoveryRes;
+            break;
+        case V2G_METERING_RECEIPT_MSG:
+        case V2G_CERTIFICATE_UPDATE_MSG:
+        case V2G_CERTIFICATE_INSTALLATION_MSG: // TODO: Fallthrough intended, not implemented in EVerest V2G_Message_ID
+            break;
+        case V2G_CHARGING_STATUS_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::ChargingStatusReq;
+            else return types::iso15118_charger::V2G_Message_ID::ChargingStatusRes;
+            break;
+        case V2G_CABLE_CHECK_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::CableCheckReq;
+            else return types::iso15118_charger::V2G_Message_ID::CableCheckRes;
+            break;
+        case V2G_PRE_CHARGE_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::PreChargeReq;
+            else return types::iso15118_charger::V2G_Message_ID::PreChargeRes;
+            break;
+        case V2G_POWER_DELIVERY_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::PowerDeliveryReq;
+            else return types::iso15118_charger::V2G_Message_ID::PowerDeliveryRes;
+            break;
+        case V2G_CURRENT_DEMAND_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::CurrentDemandReq;
+            else return types::iso15118_charger::V2G_Message_ID::CurrentDemandRes;
+            break;
+        case V2G_WELDING_DETECTION_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::WeldingDetectionReq;
+            else return types::iso15118_charger::V2G_Message_ID::WeldingDetectionRes;
+            break;
+        case V2G_SESSION_STOP_MSG:
+            if (is_req) return types::iso15118_charger::V2G_Message_ID::SessionStopReq;
+            else return types::iso15118_charger::V2G_Message_ID::SessionStopRes;
+            break;
+        default:
+            break;
+    }
+    return (types::iso15118_charger::V2G_Message_ID) -1; // TODO: this should be set to e.g., UnknownMessage
+}
+
+static void publish_var_V2G_Message(v2g_connection* conn, bool is_req) {
+    types::iso15118_charger::V2G_Messages v2gMessage;
+
+    u_int8_t* tempbuff = &conn->buffer[V2GTP_HEADER_LENGTH];
+    std::string msg_as_hex_string;
+    for(int i = 0; ((tempbuff != NULL) && (i < conn->payload_len)); i++) {
+        char hex[4];
+        snprintf(hex, 4, "%x", *tempbuff); //to hex
+        if (strlen(hex) == 1)
+            msg_as_hex_string += '0';
+        msg_as_hex_string += hex;
+        tempbuff++;
+    }
+
+    unsigned char* base64_buffer = NULL;
+    size_t base64_buffer_len = 0;
+    mbedtls_base64_encode(NULL, 0, &base64_buffer_len,
+                         (unsigned char*) &conn->buffer[V2GTP_HEADER_LENGTH], (size_t) conn->payload_len);
+    base64_buffer = (unsigned char*) malloc(base64_buffer_len);
+    if ((base64_buffer == NULL) || (mbedtls_base64_encode(base64_buffer, base64_buffer_len, &base64_buffer_len,
+        (unsigned char*) &conn->buffer[V2GTP_HEADER_LENGTH], (size_t) conn->payload_len) != 0)) {
+         dlog(DLOG_LEVEL_WARNING, "Unable to base64 encode EXI buffer");
+    }
+
+    v2gMessage.V2G_Message_EXI_Base64 = std::string((const char*) base64_buffer, base64_buffer_len);
+    if (base64_buffer != NULL) {
+        free(base64_buffer);
+    }
+    v2gMessage.V2G_Message_ID = get_V2G_Message_ID(conn->ctx->current_v2g_msg, is_req);
+    v2gMessage.V2G_Message_EXI_Hex = msg_as_hex_string;
+    conn->ctx->p_charger->publish_V2G_Messages(v2gMessage);
+}
 
 /*!
  * \brief v2g_incoming_v2gtp This function reads the v2g transport header
@@ -128,6 +232,42 @@ static enum v2g_event v2g_handle_apphandshake(struct v2g_connection *conn)
     }
 
     json appProtocolArray = json::array(); // to publish supported app protocol array
+    types::iso15118_charger::V2G_Messages appProtocol; // to publish V2G message TODO: maybe add to v2g_context
+
+    u_int8_t* tempbuff = &conn->buffer[V2GTP_HEADER_LENGTH];
+    std::string msg_as_hex_string;
+    for(int i = 0; ((tempbuff != NULL) && (i < conn->payload_len)); i++) {
+        char hex[4];
+        snprintf(hex, 4, "%x", *tempbuff); //to hex
+        if (strlen(hex) == 1)
+            msg_as_hex_string += '0';
+        msg_as_hex_string += hex;
+        tempbuff++;
+    }
+
+    unsigned char* base64_buffer = NULL;
+    size_t base64_buffer_len = 0;
+    
+    mbedtls_base64_encode(NULL, 0, &base64_buffer_len, 
+                         (unsigned char*) &conn->buffer[V2GTP_HEADER_LENGTH], (size_t) conn->payload_len);
+
+    base64_buffer = (unsigned char*) malloc(base64_buffer_len);
+
+    if ((base64_buffer == NULL) || (mbedtls_base64_encode(base64_buffer, base64_buffer_len, &base64_buffer_len, 
+        (unsigned char*) &conn->buffer[V2GTP_HEADER_LENGTH], (size_t) conn->payload_len) != 0)) {
+         dlog(DLOG_LEVEL_WARNING, "Unable to base64 encode EXI buffer");
+    }
+
+    appProtocol.V2G_Message_EXI_Base64 = std::string((const char*) base64_buffer, base64_buffer_len);
+
+    if (base64_buffer != NULL) {
+        free(base64_buffer);
+    }
+
+    appProtocol.V2G_Message_ID = (types::iso15118_charger::V2G_Message_ID) conn->ctx->current_v2g_msg; // TODO: fix message ID
+    appProtocol.V2G_Message_EXI_Hex = msg_as_hex_string;
+
+    conn->ctx->p_charger->publish_V2G_Messages(appProtocol);
 
     for (i = 0; i < conn->handshake_req.supportedAppProtocolReq.AppProtocol.arrayLen ; i++) {
         struct appHandAppProtocolType *app_proto = &conn->handshake_req.supportedAppProtocolReq.AppProtocol.array[i];
@@ -169,7 +309,6 @@ static enum v2g_event v2g_handle_apphandshake(struct v2g_connection *conn)
         }
 
         // TODO: ISO15118v2
-
         free(proto_ns);
     }
 
@@ -393,6 +532,9 @@ int v2g_handle_connection(struct v2g_connection *conn) {
 				goto error_out; // 	if protocol is unknown
 		}
 
+		/* form the content of V2G_Message type and publish the request*/
+		publish_var_V2G_Message(conn, true);
+
 		switch(v2gEvent) {
 			case V2G_EVENT_SEND_AND_TERMINATE:
 				stop_receiving_loop = true;
@@ -431,13 +573,17 @@ int v2g_handle_connection(struct v2g_connection *conn) {
 						 conn->ctx->current_v2g_msg, MAX_RES_TIME, time_to_conf_res);
 				}
 			}
-			case V2G_EVENT_SEND_RECV_EXI_MSG: // fall-through intended
+			case V2G_EVENT_SEND_RECV_EXI_MSG: {// fall-through intended
+		        /* form the content of V2G_Message type and publish the response*/
+		        publish_var_V2G_Message(conn, false);
+
 				/* Write header and send next res-msg */
 				if ((rv != 0) || ((rv = v2g_outgoing_v2gtp(conn)) == -1)) {
 					dlog(DLOG_LEVEL_ERROR, "v2g_outgoing_v2gtp() \"%s\" failed: %d", v2gMsgType[conn->ctx->current_v2g_msg], rv);
 					break;
 				}
 				break;
+			}
 			case V2G_EVENT_IGNORE_MSG:
 				dlog(DLOG_LEVEL_ERROR, "Ignoring V2G request message \"%s\". Waiting for next request", v2gMsgType[conn->ctx->current_v2g_msg]);
 				break;
