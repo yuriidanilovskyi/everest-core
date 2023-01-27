@@ -75,7 +75,12 @@ active_modules:
       hlc:
         - module_id: iso15118_charger
           implementation_id: charger
+      powersupply_DC:
+        - module_id: powersupply_dc
+          implementation_id: main
     module: EvseManager
+  powersupply_dc:
+    module: DCSupplySimulator
   grid_connection_point:
     config_module:
       fuse_limit_A: 63
