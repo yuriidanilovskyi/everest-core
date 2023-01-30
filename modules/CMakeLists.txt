@@ -10,6 +10,7 @@ ev_add_cpp_module(EvseV2G)
 ev_add_cpp_module(EvseSlac)
 ev_add_cpp_module(Example)
 ev_add_cpp_module(ExampleUser)
+ev_add_cpp_module(IMDSimulator)
 
 ev_add_js_module(JsCarSimulator)
 ev_add_js_module(JsCarV2G)
