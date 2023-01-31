@@ -493,7 +493,12 @@ static void publish_iso_charge_parameter_discovery_req(struct v2g_context *ctx, 
     ctx->p_charger->publish_RequestedEnergyTransferMode(static_cast<types::iso15118_charger::EnergyTransferMode>(v2g_charge_parameter_discovery_req->RequestedEnergyTransferMode));
     if(v2g_charge_parameter_discovery_req->AC_EVChargeParameter_isUsed == (unsigned int) 1) {
         if (v2g_charge_parameter_discovery_req->AC_EVChargeParameter.DepartureTime_isUsed == (unsigned int) 1) {
-            ctx->p_charger->publish_DepartureTime(std::to_string(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.DepartureTime));
+            const char *format = "%Y-%m-%dT%H:%M:%SZ";
+            char buffer[100];
+            std::time_t time_now_in_sec = time (NULL);
+            std::time_t departure_time = time_now_in_sec + v2g_charge_parameter_discovery_req->AC_EVChargeParameter.DepartureTime;
+            std::strftime(buffer, sizeof(buffer), format, std::gmtime(&departure_time));
+            ctx->p_charger->publish_DepartureTime(buffer);
         }
             ctx->p_charger->publish_AC_EAmount(calc_physical_value(v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EAmount.Value,
                                                               v2g_charge_parameter_discovery_req->AC_EVChargeParameter.EAmount.Multiplier));
@@ -506,7 +511,12 @@ static void publish_iso_charge_parameter_discovery_req(struct v2g_context *ctx, 
     }
     else if(v2g_charge_parameter_discovery_req->DC_EVChargeParameter_isUsed == (unsigned int) 1) {
         if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DepartureTime_isUsed == (unsigned int) 1) {
-            ctx->p_charger->publish_DepartureTime(std::to_string(v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DepartureTime));
+            const char *format = "%Y-%m-%dT%H:%M:%SZ";
+            char buffer[100];
+            std::time_t time_now_in_sec = time (NULL);
+            std::time_t departure_time = time_now_in_sec + v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DepartureTime;
+            std::strftime(buffer, sizeof(buffer), format, std::gmtime(&departure_time));
+            ctx->p_charger->publish_DepartureTime(buffer);
 
             if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity_isUsed == (unsigned int) 1) {
                 ctx->p_charger->publish_DC_EVEnergyCapacity(calc_physical_value(v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity.Value,
